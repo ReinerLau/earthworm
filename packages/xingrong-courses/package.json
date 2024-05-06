@@ -5,11 +5,15 @@
   "main": "src/index.ts",
   "scripts": {
     "upload": "tsx src/seed.ts",
-    "pdf:parse": "tsx src/parsePDF/index.ts"
+    "pdf:parse": "tsx src/parsePDF/index.ts",
+    "get:symbol": "tsx src/get-pronunciation-symbols/index.ts",
+    "get:audio": "tsx src/get-pronunciation-symbols/get-audio.ts",
+    "group:symbol": "tsx src/get-pronunciation-symbols/group-symbol.ts"
   },
   "dependencies": {
     "@earthworm/db": "workspace:^",
     "@earthworm/schema": "workspace:^",
+    "cheerio": "1.0.0-rc.12",
     "inquirer": "^9.2.13",
     "pdf-parse": "^1.1.1"
   },
