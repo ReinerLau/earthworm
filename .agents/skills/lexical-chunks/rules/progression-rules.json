@@ -1,0 +1,27 @@
+{
+  "schema_version": 2,
+  "content_pos": ["ADJ", "ADV", "NOUN", "NUM", "PROPN", "VERB"],
+  "excluded_pos": ["AUX", "CCONJ", "DET", "PART", "PRON", "SCONJ"],
+  "excluded_dependencies": [
+    "agent",
+    "aux",
+    "auxpass",
+    "case",
+    "cc",
+    "cop",
+    "det",
+    "expl",
+    "mark",
+    "neg",
+    "prep",
+    "prt"
+  ],
+  "lexical_pos_compatibility": {
+    "a": ["ADJ"],
+    "n": ["NOUN", "PROPN"],
+    "r": ["ADV"],
+    "s": ["ADJ"],
+    "v": ["VERB"]
+  },
+  "combination_direction": "right_to_left"
+}
