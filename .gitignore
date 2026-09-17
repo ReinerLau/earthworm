@@ -134,5 +134,12 @@ dist
 # MacOS .DS_Store file
 **/.DS_Store
 
+# Python cache files
+__pycache__/
+*.py[cod]
+
+# Generated lexical-chunk reports
+outputs/lexical-chunks/
+
 # docker volumes for dev
 .volumes

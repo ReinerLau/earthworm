@@ -15,70 +15,194 @@ from contextlib import redirect_stderr
 from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest import TestCase, main as unittest_main
+from unittest import TestCase
+from unittest import main as unittest_main
 from unittest.mock import patch
 
 from split_lexical_chunks import (
     ConfigurationError,
-    analyze_sentence,
+    LexiconEntry,
+    LexiconMatch,
+    ProgressionRules,
+    SyntaxToken,
     build_analysis,
+    build_learning_units,
     build_trie,
     choose_output_path,
     find_chunks,
+    find_lexicon_spans,
+    find_sentence_atoms,
     load_rules,
-    load_syntax_model,
-    main as cli_main,
     parse_annotations,
     render_contextual_report,
     render_report,
     select_longest_spans,
     split_sentences,
     tokenize,
+    validate_analysis,
 )
+from split_lexical_chunks import main as cli_main
+
+RULES = ProgressionRules(
+    content_pos=frozenset({"ADJ", "ADV", "NOUN", "NUM", "PROPN", "VERB"}),
+    excluded_pos=frozenset({"AUX", "CCONJ", "DET", "PART", "PRON", "SCONJ"}),
+    excluded_dependencies=frozenset(
+        {
+            "agent",
+            "aux",
+            "auxpass",
+            "case",
+            "cc",
+            "cop",
+            "det",
+            "expl",
+            "mark",
+            "neg",
+            "prep",
+            "prt",
+        }
+    ),
+    lexical_pos_compatibility={
+        "a": frozenset({"ADJ"}),
+        "n": frozenset({"NOUN", "PROPN"}),
+        "r": frozenset({"ADV"}),
+        "s": frozenset({"ADJ"}),
+        "v": frozenset({"VERB"}),
+    },
+    combination_direction="right_to_left",
+)
+
+LEXICAL_POS = {
+    "bark": "v",
+    "be": "v",
+    "beta": "n",
+    "good": "a",
+    "look": "v",
+    "mental health": "n",
+    "take part": "v",
+}
+
+
+def fake_entries(forms):
+    for form in forms:
+        lemma = "be" if form == "is" else form
+        yield LexiconEntry(form, lemma, LEXICAL_POS.get(form, "n"))
+
+
+def fake_match(start: int, end: int) -> LexiconMatch:
+    return LexiconMatch(start, end, frozenset({"example"}), frozenset({"n"}), "surface")
 
 
 def fake_morphy(form: str):
     lemmas = {
         "dogs": {"dog"},
+        "is": {"be"},
         "looked": {"look"},
-        "babies": {"baby"},
         "took": {"take"},
     }
     return {None: lemmas.get(form, {form})}
 
 
+def fake_analyze(sentence: str):
+    pos_by_word = {
+        "a": ("DET", "det"),
+        "and": ("CCONJ", "cc"),
+        "be": ("AUX", "cop"),
+        "birdsong": ("ADP", "advmod"),
+        "for": ("ADP", "prep"),
+        "in": ("ADP", "prep"),
+        "is": ("AUX", "cop"),
+        "our": ("DET", "poss"),
+        "the": ("DET", "det"),
+        "they": ("PRON", "nsubj"),
+        "to": ("ADP", "prep"),
+    }
+    adjective_words = {"beautiful", "good", "mental", "natural"}
+    verb_words = {"bark", "glows", "listened", "matters", "took"}
+    syntax = []
+    for index, token in enumerate(tokenize(sentence)):
+        normalized = token.text.casefold()
+        if normalized in pos_by_word:
+            pos, dep = pos_by_word[normalized]
+        elif normalized in adjective_words:
+            pos, dep = "ADJ", "amod"
+        elif normalized in verb_words:
+            pos, dep = "VERB", "ROOT"
+        else:
+            pos, dep = "NOUN", "ROOT"
+        syntax.append(SyntaxToken(token.text, token.start, token.end, pos, dep, index))
+    return syntax
+
+
 class SplitLexicalChunksTests(TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.nlp = load_syntax_model()
-        cls.rules = load_rules()
+    def atoms(self, sentence: str, forms=()):
+        return find_sentence_atoms(
+            sentence, build_trie(fake_entries(forms)), fake_morphy, fake_analyze, RULES
+        )
 
     def chunks(self, sentence: str, forms=()):
         return find_chunks(
-            sentence,
-            build_trie(forms),
-            fake_morphy,
-            lambda value: analyze_sentence(self.nlp, value),
-            self.rules,
+            sentence, build_trie(fake_entries(forms)), fake_morphy, fake_analyze, RULES
         )
 
     def analysis(self, sentence: str, forms=()):
         return build_analysis(
             [sentence],
-            build_trie(forms),
+            build_trie(fake_entries(forms)),
             fake_morphy,
-            lambda value: analyze_sentence(self.nlp, value),
-            self.rules,
+            fake_analyze,
+            RULES,
         )
 
     @staticmethod
     def sample_analysis():
         return {
-            "schema_version": 1,
+            "schema_version": 4,
             "sentences": [
                 {
                     "sentence": "Dogs bark.",
-                    "chunks": ["Dogs", "bark"],
+                    "atoms": [
+                        {
+                            "text": "Dogs",
+                            "start": 0,
+                            "end": 4,
+                            "source": "oewn",
+                            "lexicon_lemmas": ["dog"],
+                            "lexicon_pos": ["n"],
+                            "match_kind": "morphy",
+                            "head_pos": "NOUN",
+                            "head_dep": "ROOT",
+                            "core": True,
+                        },
+                        {
+                            "text": "bark",
+                            "start": 5,
+                            "end": 9,
+                            "source": "oewn",
+                            "lexicon_lemmas": ["bark"],
+                            "lexicon_pos": ["v"],
+                            "match_kind": "surface",
+                            "head_pos": "VERB",
+                            "head_dep": "ROOT",
+                            "core": True,
+                        },
+                    ],
+                    "learning_units": [
+                        {
+                            "text": "Dogs",
+                            "start": 0,
+                            "end": 4,
+                            "kind": "core",
+                            "core_count": 1,
+                        },
+                        {
+                            "text": "bark",
+                            "start": 5,
+                            "end": 9,
+                            "kind": "core",
+                            "core_count": 1,
+                        },
+                    ],
                 }
             ],
         }
@@ -86,23 +210,14 @@ class SplitLexicalChunksTests(TestCase):
     @staticmethod
     def sample_annotations():
         return {
-            "schema_version": 1,
+            "schema_version": 4,
             "sentences": [
                 {
-                    "chunk_meanings": ["狗", "吠叫"],
+                    "unit_prompts": ["狗", "吠叫"],
                     "sentence_translation": "狗会吠叫。",
                 }
             ],
         }
-
-    def test_keeps_unmatched_tokens_as_non_overlapping_segments(self):
-        self.assertEqual(
-            self.chunks("They listened."),
-            ["They", "listened", "They listened."],
-        )
-
-    def test_does_not_duplicate_a_single_word_sentence(self):
-        self.assertEqual(self.chunks("Hello"), ["Hello"])
 
     def test_splits_only_at_sentence_end_punctuation(self):
         self.assertEqual(
@@ -128,102 +243,193 @@ class SplitLexicalChunksTests(TestCase):
             ["1,500", "don't", "damage", "nature's", "well-being"],
         )
 
+    def test_loads_general_evidence_rules_without_word_overrides(self):
+        rules = load_rules()
+
+        self.assertEqual(
+            rules.lexical_pos_compatibility["n"], frozenset({"NOUN", "PROPN"})
+        )
+        self.assertIn("AUX", rules.excluded_pos)
+        self.assertIn("det", rules.excluded_dependencies)
+        self.assertFalse(hasattr(rules, "force_core_forms"))
+
+    def test_finds_single_and_multiword_oewn_candidates(self):
+        sentence = "Birdsong is good for mental health."
+        tokens = tokenize(sentence)
+        candidates = find_lexicon_spans(
+            sentence,
+            tokens,
+            build_trie(fake_entries(["birdsong", "be", "good", "mental health"])),
+            fake_morphy,
+        )
+
+        self.assertEqual(
+            candidates,
+            [
+                LexiconMatch(
+                    0,
+                    1,
+                    frozenset({"birdsong"}),
+                    frozenset({"n"}),
+                    "surface",
+                ),
+                LexiconMatch(1, 2, frozenset({"be"}), frozenset({"v"}), "morphy"),
+                LexiconMatch(2, 3, frozenset({"good"}), frozenset({"a"}), "surface"),
+                LexiconMatch(
+                    4,
+                    6,
+                    frozenset({"mental health"}),
+                    frozenset({"n"}),
+                    "surface",
+                ),
+            ],
+        )
+
     def test_selects_longest_non_overlapping_oewn_matches(self):
         self.assertEqual(
-            self.chunks(
-                "Mental health care matters.",
-                ["mental health", "health care", "mental health care"],
-            ),
-            ["Mental health care", "matters", "Mental health care matters."],
-        )
-
-    def test_combines_word_with_governed_preposition(self):
-        self.assertEqual(
-            self.chunks("Birdsong is good for our mental health.", ["mental health"]),
-            [
-                "Birdsong",
-                "is",
-                "good for",
-                "our",
-                "mental health",
-                "Birdsong is good for our mental health.",
-            ],
-        )
-
-    def test_extends_oewn_chunk_with_governed_preposition(self):
-        self.assertEqual(
-            self.chunks("Many people took part in the study.", ["take part"]),
-            [
-                "Many",
-                "people",
-                "took part in",
-                "the",
-                "study",
-                "Many people took part in the study.",
-            ],
-        )
-
-    def test_combines_verb_with_particle(self):
-        self.assertEqual(
-            self.chunks("Please look up the word."),
-            ["Please", "look up", "the", "word", "Please look up the word."],
-        )
-
-    def test_combines_verb_with_infinitive_to(self):
-        self.assertEqual(
-            self.chunks("We need to investigate."),
-            ["We", "need to", "investigate", "We need to investigate."],
-        )
-
-    def test_does_not_combine_across_punctuation(self):
-        self.assertEqual(
-            self.chunks("Noise, from traffic."),
-            ["Noise", "from", "traffic", "Noise, from traffic."],
-        )
-
-    def test_requires_the_declared_dependency_relation(self):
-        # The fixed model tags "birdsong" as ADP here, but not as a governed prep.
-        self.assertEqual(
-            self.chunks(
-                "A study found that traffic noise reduces the benefits of hearing birdsong."
-            ),
-            [
-                "A",
-                "study",
-                "found",
-                "that",
-                "traffic",
-                "noise",
-                "reduces",
-                "the",
-                "benefits of",
-                "hearing",
-                "birdsong",
-                "A study found that traffic noise reduces the benefits of hearing birdsong.",
-            ],
-        )
-
-    def test_builds_structured_analysis_without_sentence_in_chunks(self):
-        self.assertEqual(
-            self.analysis("Dogs bark."),
-            {
-                "schema_version": 1,
-                "sentences": [
-                    {
-                        "sentence": "Dogs bark.",
-                        "chunks": ["Dogs", "bark"],
-                    }
+            select_longest_spans(
+                4,
+                [
+                    fake_match(1, 3),
+                    fake_match(0, 2),
+                    fake_match(2, 4),
+                    fake_match(0, 1),
                 ],
-            },
+            ),
+            [fake_match(0, 2), fake_match(2, 4)],
         )
 
-    def test_longest_span_selection_breaks_ties_by_position(self):
+    def test_every_selected_oewn_content_match_becomes_a_core_unit(self):
+        analysis = self.analysis(
+            "Birdsong is good for our mental health.",
+            ["birdsong", "be", "good", "mental health"],
+        )["sentences"][0]
+
         self.assertEqual(
-            select_longest_spans(4, [(1, 3), (0, 2), (2, 4)]),
-            [(0, 2), (2, 4)],
+            [unit["text"] for unit in analysis["learning_units"]],
+            ["Birdsong", "good", "mental health", "good for our mental health"],
+        )
+        self.assertEqual(
+            [unit["kind"] for unit in analysis["learning_units"]],
+            ["core", "core", "core", "composition"],
         )
 
-    def test_renders_a_single_english_column(self):
+    def test_contextual_function_word_match_is_not_a_core(self):
+        atoms = self.atoms("Birdsong is good.", ["birdsong", "be", "good"])
+        is_atom = next(atom for atom in atoms if atom["text"] == "is")
+
+        self.assertEqual(is_atom["source"], "oewn")
+        self.assertEqual(is_atom["lexicon_pos"], ["v"])
+        self.assertEqual(is_atom["match_kind"], "morphy")
+        self.assertFalse(is_atom["core"])
+
+    def test_surface_oewn_content_survives_context_pos_mistag(self):
+        atoms = self.atoms("Birdsong matters.", ["birdsong"])
+        birdsong = atoms[0]
+
+        self.assertEqual(birdsong["head_pos"], "ADP")
+        self.assertEqual(birdsong["head_dep"], "advmod")
+        self.assertEqual(birdsong["lexicon_pos"], ["n"])
+        self.assertEqual(birdsong["match_kind"], "surface")
+        self.assertTrue(birdsong["core"])
+
+    def test_surface_oewn_homograph_in_function_role_is_not_a_core(self):
+        atoms = self.atoms("A study matters.", ["a", "study"])
+        article = atoms[0]
+
+        self.assertEqual(article["source"], "oewn")
+        self.assertEqual(article["lexicon_pos"], ["n"])
+        self.assertEqual(article["head_dep"], "det")
+        self.assertFalse(article["core"])
+
+    def test_pos_adds_unmatched_content_words_as_core_units(self):
+        analysis = self.analysis("Zorb glows.")["sentences"][0]
+
+        self.assertEqual(
+            [unit["text"] for unit in analysis["learning_units"]],
+            ["Zorb", "glows"],
+        )
+        self.assertTrue(all(atom["source"] == "token" for atom in analysis["atoms"]))
+
+    def test_function_words_enter_only_when_cores_are_composed(self):
+        analysis = self.analysis(
+            "Birdsong is good for our mental health.",
+            ["birdsong", "be", "good", "mental health"],
+        )["sentences"][0]
+
+        core_texts = [
+            unit["text"]
+            for unit in analysis["learning_units"]
+            if unit["kind"] == "core"
+        ]
+        composition_texts = [
+            unit["text"]
+            for unit in analysis["learning_units"]
+            if unit["kind"] == "composition"
+        ]
+        self.assertNotIn("is", core_texts)
+        self.assertNotIn("for", core_texts)
+        self.assertNotIn("our", core_texts)
+        self.assertEqual(composition_texts, ["good for our mental health"])
+
+    def test_right_fold_adds_one_core_per_composition(self):
+        sentence = "Alpha is beta for gamma and delta."
+        analysis = self.analysis(sentence, ["alpha", "be", "beta", "gamma", "delta"])[
+            "sentences"
+        ][0]
+
+        self.assertEqual(
+            [(unit["text"], unit["core_count"]) for unit in analysis["learning_units"]],
+            [
+                ("Alpha", 1),
+                ("beta", 1),
+                ("gamma", 1),
+                ("delta", 1),
+                ("gamma and delta", 2),
+                ("beta for gamma and delta", 3),
+            ],
+        )
+
+    def test_two_cores_progress_directly_to_the_complete_sentence(self):
+        self.assertEqual(
+            self.chunks("Dogs bark.", ["dog", "bark"]),
+            ["Dogs", "bark", "Dogs bark."],
+        )
+
+    def test_morphy_matches_inflected_oewn_expression(self):
+        atoms = self.atoms("Many people took part in the study.", ["take part"])
+
+        self.assertIn(
+            {
+                "text": "took part",
+                "start": 12,
+                "end": 21,
+                "source": "oewn",
+                "lexicon_lemmas": ["take part"],
+                "lexicon_pos": ["v"],
+                "match_kind": "morphy",
+                "head_pos": "VERB",
+                "head_dep": "ROOT",
+                "core": True,
+            },
+            atoms,
+        )
+
+    def test_builds_schema_four_analysis(self):
+        self.assertEqual(
+            self.analysis("Dogs bark.", ["dog", "bark"]),
+            self.sample_analysis(),
+        )
+
+    def test_build_learning_units_is_deterministic(self):
+        analysis = self.sample_analysis()["sentences"][0]
+
+        self.assertEqual(
+            build_learning_units(analysis["sentence"], analysis["atoms"]),
+            analysis["learning_units"],
+        )
+
+    def test_renders_compatibility_english_column(self):
         self.assertEqual(
             render_report([["dogs", "Dogs bark."]]),
             "| 英文语块 |\n|---|\n| dogs |\n| Dogs bark. |\n",
@@ -235,7 +441,26 @@ class SplitLexicalChunksTests(TestCase):
             "| 英文语块 |\n|---|\n| a \\| b |\n",
         )
 
-    def test_parses_complete_contextual_annotations(self):
+    def test_validates_deterministic_analysis(self):
+        self.assertEqual(
+            validate_analysis(self.sample_analysis()), self.sample_analysis()
+        )
+
+    def test_rejects_tampered_learning_units(self):
+        payload = self.sample_analysis()
+        payload["sentences"][0]["learning_units"][0]["text"] = "Cats"
+
+        with self.assertRaisesRegex(ConfigurationError, "must match"):
+            validate_analysis(payload)
+
+    def test_rejects_missing_oewn_evidence(self):
+        payload = self.sample_analysis()
+        payload["sentences"][0]["atoms"][0]["lexicon_pos"] = []
+
+        with self.assertRaisesRegex(ConfigurationError, "evidence must be non-empty"):
+            validate_analysis(payload)
+
+    def test_parses_aligned_chinese_prompts(self):
         annotations = self.sample_annotations()
 
         self.assertEqual(
@@ -250,25 +475,24 @@ class SplitLexicalChunksTests(TestCase):
     def test_rejects_missing_or_extra_sentence_annotations(self):
         for sentences in ([], self.sample_annotations()["sentences"] * 2):
             with self.subTest(count=len(sentences)):
-                payload = {"schema_version": 1, "sentences": sentences}
+                payload = {"schema_version": 4, "sentences": sentences}
                 with self.assertRaisesRegex(ConfigurationError, "exactly 1 items"):
                     parse_annotations(json.dumps(payload), self.sample_analysis())
 
-    def test_rejects_wrong_chunk_meaning_count(self):
+    def test_rejects_wrong_prompt_count(self):
         payload = self.sample_annotations()
-        payload["sentences"][0]["chunk_meanings"] = ["狗"]
+        payload["sentences"][0]["unit_prompts"] = ["狗"]
 
         with self.assertRaisesRegex(ConfigurationError, "exactly 2 items"):
             parse_annotations(json.dumps(payload), self.sample_analysis())
 
-    def test_rejects_empty_meaning_or_translation(self):
-        for field, value in (
-            ("chunk_meanings", ["狗", " "]),
-            ("sentence_translation", " "),
-        ):
+    def test_rejects_empty_prompt_or_translation(self):
+        for field in ("unit_prompts", "sentence_translation"):
             with self.subTest(field=field):
                 payload = self.sample_annotations()
-                payload["sentences"][0][field] = value
+                payload["sentences"][0][field] = (
+                    ["狗", " "] if field == "unit_prompts" else " "
+                )
                 with self.assertRaisesRegex(ConfigurationError, "non-empty"):
                     parse_annotations(json.dumps(payload), self.sample_analysis())
 
@@ -279,38 +503,43 @@ class SplitLexicalChunksTests(TestCase):
         with self.assertRaisesRegex(ConfigurationError, "unknown keys"):
             parse_annotations(json.dumps(payload), self.sample_analysis())
 
-    def test_renders_contextual_report_grouped_by_sentence(self):
-        analysis = {
-            "schema_version": 1,
-            "sentences": [
-                {"sentence": "A | B.", "chunks": ["A | B"]},
-            ],
-        }
+    def test_renders_script_units_and_appends_complete_sentence(self):
+        analysis = self.analysis(
+            "Birdsong is good for our mental health.",
+            ["birdsong", "be", "good", "mental health"],
+        )
         annotations = {
-            "schema_version": 1,
+            "schema_version": 4,
             "sentences": [
                 {
-                    "chunk_meanings": ["甲 | 乙"],
-                    "sentence_translation": "甲 | 乙。",
+                    "unit_prompts": [
+                        "鸟鸣",
+                        "有益的",
+                        "心理健康",
+                        "对我们的心理健康有益",
+                    ],
+                    "sentence_translation": "鸟鸣有益于我们的心理健康。",
                 }
             ],
         }
 
         self.assertEqual(
             render_contextual_report(analysis, annotations),
-            "# 教材语块释义\n\n"
+            "# 渐进学习单元\n\n"
             "## 第 1 句\n\n"
-            "| 英文语块 | 语境释义 |\n"
-            "|---|---|\n"
-            "| A \\| B | 甲 \\| 乙 |\n\n"
-            "**完整原句：** A \\| B\\.\n\n"
-            "**整句翻译：** 甲 \\| 乙。\n",
+            "| 步骤 | 中文提示 | 英文答案 |\n"
+            "|---:|---|---|\n"
+            "| 1 | 鸟鸣 | Birdsong |\n"
+            "| 2 | 有益的 | good |\n"
+            "| 3 | 心理健康 | mental health |\n"
+            "| 4 | 对我们的心理健康有益 | good for our mental health |\n"
+            "| 5 | 鸟鸣有益于我们的心理健康。 | Birdsong is good for our mental health. |\n",
         )
 
     def test_render_validation_failure_does_not_create_report(self):
         with TemporaryDirectory() as directory:
             analysis_path = Path(directory) / "analysis.json"
-            output_path = Path(directory) / "report.chunks.md"
+            output_path = Path(directory) / "report.learning-units.md"
             analysis_path.write_text(
                 json.dumps(self.sample_analysis()), encoding="utf-8"
             )
@@ -336,15 +565,15 @@ class SplitLexicalChunksTests(TestCase):
             self.assertIn("not valid JSON", stderr.getvalue())
             self.assertFalse(output_path.exists())
 
-    def test_increments_name_before_chunks_suffix(self):
+    def test_increments_name_before_learning_units_suffix(self):
         with TemporaryDirectory() as directory:
-            requested = Path(directory) / "text.chunks.md"
+            requested = Path(directory) / "text.learning-units.md"
             requested.touch()
-            (Path(directory) / "text-2.chunks.md").touch()
+            (Path(directory) / "text-2.learning-units.md").touch()
 
             self.assertEqual(
                 choose_output_path(requested).name,
-                "text-3.chunks.md",
+                "text-3.learning-units.md",
             )
 
 
