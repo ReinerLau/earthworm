@@ -1,0 +1,4 @@
+interface:
+  display_name: "教材语块与释义"
+  short_description: "用固定拆分生成无重叠英文语块、简体中文语境释义和整句翻译"
+  default_prompt: "使用 $lexical-chunks 处理我粘贴的英文教材，生成逐语块中文释义报告，并只返回报告文件链接。"
