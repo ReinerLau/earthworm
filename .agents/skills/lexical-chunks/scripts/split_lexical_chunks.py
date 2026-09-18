@@ -33,9 +33,9 @@ MODEL_DISTRIBUTION = "en-core-web-sm"
 MODEL_VERSION = "3.8.0"
 DEFAULT_OUTPUT = Path("outputs/lexical-chunks/text.learning-units.md")
 DEFAULT_RULES = Path(__file__).resolve().parents[1] / "rules" / "progression-rules.json"
-ANALYSIS_SCHEMA_VERSION = 4
-ANNOTATION_SCHEMA_VERSION = 4
-RULE_SCHEMA_VERSION = 2
+ANALYSIS_SCHEMA_VERSION = 6
+ANNOTATION_SCHEMA_VERSION = 6
+RULE_SCHEMA_VERSION = 4
 SENTENCE_PATTERN = re.compile(
     r".*?[.!?]+(?:[\"'’”’\)\]]+)?(?=\s|$)|.+$",
     re.DOTALL,
@@ -99,7 +99,11 @@ class ProgressionRules:
     excluded_pos: frozenset[str]
     excluded_dependencies: frozenset[str]
     lexical_pos_compatibility: Mapping[str, frozenset[str]]
-    combination_direction: str
+    combination_strategy: str
+    nominal_head_pos: frozenset[str]
+    nominal_premodifier_dependencies: frozenset[str]
+    verb_particle_head_pos: frozenset[str]
+    verb_particle_dependencies: frozenset[str]
 
 
 @dataclass
@@ -215,7 +219,11 @@ def load_rules(path: Path = DEFAULT_RULES) -> ProgressionRules:
             "excluded_pos",
             "excluded_dependencies",
             "lexical_pos_compatibility",
-            "combination_direction",
+            "combination_strategy",
+            "nominal_head_pos",
+            "nominal_premodifier_dependencies",
+            "verb_particle_head_pos",
+            "verb_particle_dependencies",
         },
         "progression rules",
     )
@@ -240,17 +248,35 @@ def load_rules(path: Path = DEFAULT_RULES) -> ProgressionRules:
         compatibility[lexical_pos] = _non_empty_string_set(
             contextual_pos, f"lexical_pos_compatibility.{lexical_pos}"
         )
-    direction = payload["combination_direction"]
-    if direction != "right_to_left":
+    strategy = payload["combination_strategy"]
+    if strategy != "nominal_phrase_first_right_fold":
         raise ConfigurationError(
-            "progression rules combination_direction must be right_to_left"
+            "progression rules combination_strategy must be "
+            "nominal_phrase_first_right_fold"
         )
+    nominal_head_pos = _non_empty_string_set(
+        payload["nominal_head_pos"], "nominal_head_pos"
+    )
+    nominal_dependencies = _non_empty_string_set(
+        payload["nominal_premodifier_dependencies"],
+        "nominal_premodifier_dependencies",
+    )
+    verb_particle_head_pos = _non_empty_string_set(
+        payload["verb_particle_head_pos"], "verb_particle_head_pos"
+    )
+    verb_particle_dependencies = _non_empty_string_set(
+        payload["verb_particle_dependencies"], "verb_particle_dependencies"
+    )
     return ProgressionRules(
         content_pos,
         excluded_pos,
         excluded,
         compatibility,
-        direction,
+        strategy,
+        nominal_head_pos,
+        nominal_dependencies,
+        verb_particle_head_pos,
+        verb_particle_dependencies,
     )
 
 
@@ -387,18 +413,76 @@ def select_longest_spans(
     return sorted(selected, key=lambda match: (match.start, match.end))
 
 
-def initial_segments(
-    token_count: int, lexicon_spans: Sequence[LexiconMatch]
+def find_verb_particle_spans(
+    sentence: str,
+    tokens: Sequence[Token],
+    syntax: Sequence[SyntaxToken],
+    rules: ProgressionRules,
 ) -> list[Segment]:
-    by_start = {match.start: match for match in lexicon_spans}
+    token_indexes = {
+        (token.start, token.end): index for index, token in enumerate(tokens)
+    }
+    spans: list[Segment] = []
+    for particle in syntax:
+        if (
+            particle.dep not in rules.verb_particle_dependencies
+            or not 0 <= particle.head < len(syntax)
+        ):
+            continue
+        verb = syntax[particle.head]
+        if verb.pos not in rules.verb_particle_head_pos:
+            continue
+        verb_index = token_indexes.get((verb.start, verb.end))
+        particle_index = token_indexes.get((particle.start, particle.end))
+        if (
+            verb_index is None
+            or particle_index != verb_index + 1
+            or not can_join(sentence, tokens[verb_index], tokens[particle_index])
+        ):
+            continue
+        spans.append(
+            Segment(
+                verb_index,
+                particle_index + 1,
+                "syntax",
+                match_kind="verb_particle",
+            )
+        )
+    return spans
+
+
+def initial_segments(
+    token_count: int,
+    lexicon_spans: Sequence[LexiconMatch],
+    syntax_spans: Sequence[Segment],
+) -> list[Segment]:
+    multiword_lexicon = [
+        match for match in lexicon_spans if match.end - match.start > 1
+    ]
+    accepted_syntax: list[Segment] = []
+    for candidate in sorted(syntax_spans, key=lambda span: (span.start, span.end)):
+        if any(
+            candidate.start < match.end and match.start < candidate.end
+            for match in multiword_lexicon
+        ):
+            continue
+        if any(
+            candidate.start < match.end and match.start < candidate.end
+            for match in accepted_syntax
+        ):
+            continue
+        accepted_syntax.append(candidate)
+
+    multiword_by_start = {match.start: match for match in multiword_lexicon}
+    syntax_by_start = {span.start: span for span in accepted_syntax}
+    single_lexicon_by_start = {
+        match.start: match for match in lexicon_spans if match.end - match.start == 1
+    }
     segments: list[Segment] = []
     index = 0
     while index < token_count:
-        match = by_start.get(index)
-        if match is None:
-            segments.append(Segment(index, index + 1, "token"))
-            index += 1
-        else:
+        match = multiword_by_start.get(index)
+        if match is not None:
             segments.append(
                 Segment(
                     match.start,
@@ -410,6 +494,28 @@ def initial_segments(
                 )
             )
             index = match.end
+            continue
+        syntax_span = syntax_by_start.get(index)
+        if syntax_span is not None:
+            segments.append(syntax_span)
+            index = syntax_span.end
+            continue
+        match = single_lexicon_by_start.get(index)
+        if match is not None:
+            segments.append(
+                Segment(
+                    match.start,
+                    match.end,
+                    "oewn",
+                    match.lemmas,
+                    match.pos,
+                    match.match_kind,
+                )
+            )
+            index = match.end
+            continue
+        segments.append(Segment(index, index + 1, "token"))
+        index += 1
     return segments
 
 
@@ -437,20 +543,26 @@ def _head_indexes(
     return heads or tuple(indexes)
 
 
+def _segment_head_index(
+    segment: Segment, tokens: Sequence[Token], syntax: Sequence[SyntaxToken]
+) -> int | None:
+    indexes = _syntax_indexes(segment, tokens, syntax)
+    heads = _head_indexes(indexes, syntax)
+    return heads[0] if heads else None
+
+
 def _segment_head_pos(
     segment: Segment, tokens: Sequence[Token], syntax: Sequence[SyntaxToken]
 ) -> str:
-    indexes = _syntax_indexes(segment, tokens, syntax)
-    heads = _head_indexes(indexes, syntax)
-    return syntax[heads[0]].pos if heads else ""
+    head = _segment_head_index(segment, tokens, syntax)
+    return syntax[head].pos if head is not None else ""
 
 
 def _segment_head_dep(
     segment: Segment, tokens: Sequence[Token], syntax: Sequence[SyntaxToken]
 ) -> str:
-    indexes = _syntax_indexes(segment, tokens, syntax)
-    heads = _head_indexes(indexes, syntax)
-    return syntax[heads[0]].dep if heads else ""
+    head = _segment_head_index(segment, tokens, syntax)
+    return syntax[head].dep if head is not None else ""
 
 
 def _segment_is_core(
@@ -480,6 +592,11 @@ def _segment_is_core(
             return True
         return segment.match_kind == "surface"
 
+    if segment.source == "syntax":
+        return segment.match_kind == "verb_particle" and any(
+            syntax[index].pos in rules.verb_particle_head_pos for index in heads
+        )
+
     return any(syntax[index].pos in rules.content_pos for index in heads)
 
 
@@ -493,14 +610,27 @@ def find_sentence_atoms(
     tokens = tokenize(sentence)
     if not tokens:
         return []
+    syntax = analyze(sentence)
     candidates = find_lexicon_spans(sentence, tokens, trie, lemmatize)
     selected = select_longest_spans(len(tokens), candidates)
-    segments = initial_segments(len(tokens), selected)
-    syntax = analyze(sentence)
+    syntax_spans = find_verb_particle_spans(sentence, tokens, syntax, rules)
+    segments = initial_segments(len(tokens), selected, syntax_spans)
+    syntax_to_atom: dict[int, int] = {}
+    segment_heads: list[int | None] = []
+    for atom_index, segment in enumerate(segments):
+        syntax_indexes = _syntax_indexes(segment, tokens, syntax)
+        for syntax_index in syntax_indexes:
+            syntax_to_atom[syntax_index] = atom_index
+        segment_heads.append(_segment_head_index(segment, tokens, syntax))
+
     atoms: list[dict[str, Any]] = []
-    for segment in segments:
+    for atom_index, segment in enumerate(segments):
         start = tokens[segment.start].start
         end = tokens[segment.end - 1].end
+        syntax_head = segment_heads[atom_index]
+        parent_atom = None
+        if syntax_head is not None and syntax[syntax_head].head != syntax_head:
+            parent_atom = syntax_to_atom.get(syntax[syntax_head].head)
         atoms.append(
             {
                 "text": sentence[start:end],
@@ -512,14 +642,95 @@ def find_sentence_atoms(
                 "match_kind": segment.match_kind,
                 "head_pos": _segment_head_pos(segment, tokens, syntax),
                 "head_dep": _segment_head_dep(segment, tokens, syntax),
+                "head_atom": parent_atom,
                 "core": _segment_is_core(segment, tokens, syntax, rules),
             }
         )
     return atoms
 
 
+def _modifier_reaches_nominal_head(
+    candidate_index: int,
+    head_index: int,
+    atoms: Sequence[Mapping[str, Any]],
+    rules: ProgressionRules,
+) -> bool:
+    current = candidate_index
+    visited: set[int] = set()
+    while current != head_index:
+        if current in visited:
+            return False
+        visited.add(current)
+        atom = atoms[current]
+        if atom["head_dep"] not in rules.nominal_premodifier_dependencies:
+            return False
+        parent = atom["head_atom"]
+        if not isinstance(parent, int) or parent <= current or parent > head_index:
+            return False
+        current = parent
+    return True
+
+
+def _nominal_core_groups(
+    atoms: Sequence[Mapping[str, Any]], rules: ProgressionRules
+) -> list[list[tuple[int, Mapping[str, Any]]]]:
+    cores = [(index, atom) for index, atom in enumerate(atoms) if atom["core"]]
+    assigned: set[int] = set()
+    phrases: list[list[tuple[int, Mapping[str, Any]]]] = []
+
+    for core_position in range(len(cores) - 1, -1, -1):
+        head_atom_index, head = cores[core_position]
+        if core_position in assigned or head["head_pos"] not in rules.nominal_head_pos:
+            continue
+        start_position = core_position
+        for candidate_position in range(core_position - 1, -1, -1):
+            candidate_atom_index, _ = cores[candidate_position]
+            if candidate_position in assigned or not _modifier_reaches_nominal_head(
+                candidate_atom_index, head_atom_index, atoms, rules
+            ):
+                break
+            start_position = candidate_position
+        if start_position == core_position:
+            continue
+        phrase = cores[start_position : core_position + 1]
+        phrases.append(phrase)
+        assigned.update(range(start_position, core_position + 1))
+
+    by_start = {phrase[0][0]: phrase for phrase in phrases}
+    groups: list[list[tuple[int, Mapping[str, Any]]]] = []
+    atom_position = 0
+    while atom_position < len(atoms):
+        phrase = by_start.get(atom_position)
+        if phrase is not None:
+            groups.append(phrase)
+            atom_position = phrase[-1][0] + 1
+            continue
+        atom = atoms[atom_position]
+        if atom["core"]:
+            groups.append([(atom_position, atom)])
+        atom_position += 1
+    return groups
+
+
+def _composition_unit(
+    sentence: str,
+    left: Mapping[str, Any],
+    right: Mapping[str, Any],
+    core_count: int,
+) -> dict[str, Any]:
+    return {
+        "text": sentence[left["start"] : right["end"]],
+        "start": left["start"],
+        "end": right["end"],
+        "kind": "composition",
+        "core_count": core_count,
+    }
+
+
 def build_learning_units(
-    sentence: str, atoms: Sequence[Mapping[str, Any]]
+    sentence: str,
+    atoms: Sequence[Mapping[str, Any]],
+    rules: ProgressionRules,
 ) -> list[dict[str, Any]]:
     cores = [atom for atom in atoms if atom["core"]]
     units = [
@@ -532,22 +743,47 @@ def build_learning_units(
         }
         for core in cores
     ]
-    if len(cores) < 3:
+    if len(cores) < 2:
         return units
 
-    right_end = cores[-1]["end"]
-    for core_count in range(2, len(cores)):
-        left = cores[-core_count]
-        start = left["start"]
-        units.append(
-            {
-                "text": sentence[start:right_end],
-                "start": start,
-                "end": right_end,
-                "kind": "composition",
-                "core_count": core_count,
-            }
+    groups = _nominal_core_groups(atoms, rules)
+    total_core_count = len(cores)
+    composition_ranges: set[tuple[int, int]] = set()
+
+    for group in groups:
+        if len(group) < 2:
+            continue
+        for core_count in range(2, len(group) + 1):
+            phrase_cores = group[-core_count:]
+            if core_count >= total_core_count:
+                continue
+            unit = _composition_unit(
+                sentence, phrase_cores[0][1], phrase_cores[-1][1], core_count
+            )
+            identity = (unit["start"], unit["end"])
+            if identity not in composition_ranges:
+                units.append(unit)
+                composition_ranges.add(identity)
+
+    if len(groups) < 2:
+        return units
+
+    right_end = groups[-1][-1][1]
+    accumulated_core_count = len(groups[-1])
+    for left_group in reversed(groups[:-1]):
+        accumulated_core_count += len(left_group)
+        if accumulated_core_count >= total_core_count:
+            break
+        unit = _composition_unit(
+            sentence,
+            left_group[0][1],
+            right_end,
+            accumulated_core_count,
         )
+        identity = (unit["start"], unit["end"])
+        if identity not in composition_ranges:
+            units.append(unit)
+            composition_ranges.add(identity)
     return units
 
 
@@ -559,7 +795,7 @@ def find_sentence_units(
     rules: ProgressionRules,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     atoms = find_sentence_atoms(sentence, trie, lemmatize, analyze, rules)
-    return atoms, build_learning_units(sentence, atoms)
+    return atoms, build_learning_units(sentence, atoms, rules)
 
 
 def find_chunks(
@@ -621,7 +857,7 @@ def markdown_escape(text: str) -> str:
 
 def markdown_content_escape(text: str) -> str:
     escaped = text.replace("\\", r"\\").replace("\n", "<br>")
-    return re.sub(r"([`*_{}\[\]()<>#+\-.!|])", r"\\\1", escaped)
+    return re.sub(r"([`*_{}\[\]()<>#+.!|])", r"\\\1", escaped)
 
 
 def render_report(chunks_by_sentence: Iterable[Iterable[str]]) -> str:
@@ -678,7 +914,9 @@ def _validate_range_text(
     return start, end, text
 
 
-def validate_analysis(payload: Any) -> dict[str, Any]:
+def validate_analysis(
+    payload: Any, rules: ProgressionRules | None = None
+) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ConfigurationError("analysis must be a JSON object")
     _require_exact_keys(payload, {"schema_version", "sentences"}, "analysis")
@@ -686,6 +924,7 @@ def validate_analysis(payload: Any) -> dict[str, Any]:
         raise ConfigurationError(
             f"analysis must use schema_version {ANALYSIS_SCHEMA_VERSION}"
         )
+    active_rules = rules if rules is not None else load_rules()
     raw_sentences = payload["sentences"]
     if not isinstance(raw_sentences, list) or not raw_sentences:
         raise ConfigurationError("analysis.sentences must be a non-empty list")
@@ -723,6 +962,7 @@ def validate_analysis(payload: Any) -> dict[str, Any]:
                     "match_kind",
                     "head_pos",
                     "head_dep",
+                    "head_atom",
                     "core",
                 },
                 atom_location,
@@ -740,8 +980,9 @@ def validate_analysis(payload: Any) -> dict[str, Any]:
             match_kind = raw_atom["match_kind"]
             head_pos = raw_atom["head_pos"]
             head_dep = raw_atom["head_dep"]
+            head_atom = raw_atom["head_atom"]
             core = raw_atom["core"]
-            if source not in {"oewn", "token"}:
+            if source not in {"oewn", "syntax", "token"}:
                 raise ConfigurationError(f"{atom_location}.source is unsupported")
             if source == "oewn":
                 if not lexicon_lemmas or not lexicon_pos:
@@ -749,6 +990,15 @@ def validate_analysis(payload: Any) -> dict[str, Any]:
                         f"{atom_location} OEWN evidence must be non-empty"
                     )
                 if match_kind not in {"surface", "morphy"}:
+                    raise ConfigurationError(
+                        f"{atom_location}.match_kind is unsupported"
+                    )
+            elif source == "syntax":
+                if lexicon_lemmas or lexicon_pos:
+                    raise ConfigurationError(
+                        f"{atom_location} syntax evidence must not claim OEWN data"
+                    )
+                if match_kind != "verb_particle":
                     raise ConfigurationError(
                         f"{atom_location}.match_kind is unsupported"
                     )
@@ -760,8 +1010,31 @@ def validate_analysis(payload: Any) -> dict[str, Any]:
                 raise ConfigurationError(f"{atom_location}.head_pos must be a string")
             if not isinstance(head_dep, str):
                 raise ConfigurationError(f"{atom_location}.head_dep must be a string")
+            if head_atom is not None and (
+                not isinstance(head_atom, int) or isinstance(head_atom, bool)
+            ):
+                raise ConfigurationError(
+                    f"{atom_location}.head_atom must be an integer or null"
+                )
             if not isinstance(core, bool):
                 raise ConfigurationError(f"{atom_location}.core must be a boolean")
+            if source == "syntax":
+                if head_pos not in active_rules.verb_particle_head_pos:
+                    raise ConfigurationError(
+                        f"{atom_location} verb-particle head must use a configured POS"
+                    )
+                if not core:
+                    raise ConfigurationError(
+                        f"{atom_location} verb-particle atom must be a core"
+                    )
+                phrase_tokens = tokenize(text)
+                if len(phrase_tokens) != 2 or not can_join(
+                    text, phrase_tokens[0], phrase_tokens[1]
+                ):
+                    raise ConfigurationError(
+                        f"{atom_location} verb-particle atom must contain two "
+                        "whitespace-joined tokens"
+                    )
             atoms.append(
                 {
                     "text": text,
@@ -773,10 +1046,42 @@ def validate_analysis(payload: Any) -> dict[str, Any]:
                     "match_kind": match_kind,
                     "head_pos": head_pos,
                     "head_dep": head_dep,
+                    "head_atom": head_atom,
                     "core": core,
                 }
             )
             previous_end = end
+
+        for atom_index, atom in enumerate(atoms):
+            atom_location = f"{location}.atoms[{atom_index}]"
+            head_atom = atom["head_atom"]
+            if head_atom is not None and not 0 <= head_atom < len(atoms):
+                raise ConfigurationError(
+                    f"{atom_location}.head_atom must reference an atom"
+                )
+            if head_atom == atom_index:
+                raise ConfigurationError(
+                    f"{atom_location}.head_atom must not reference itself"
+                )
+            if atom["head_dep"] == "ROOT" and head_atom is not None:
+                raise ConfigurationError(
+                    f"{atom_location}.head_atom must be null for ROOT"
+                )
+            if atom["head_dep"] != "ROOT" and head_atom is None:
+                raise ConfigurationError(
+                    f"{atom_location}.head_atom must reference its syntactic head"
+                )
+
+        for atom_index in range(len(atoms)):
+            visited: set[int] = set()
+            current: int | None = atom_index
+            while current is not None:
+                if current in visited:
+                    raise ConfigurationError(
+                        f"{location}.atoms head_atom references must be acyclic"
+                    )
+                visited.add(current)
+                current = atoms[current]["head_atom"]
 
         raw_units = raw_sentence["learning_units"]
         if not isinstance(raw_units, list) or not raw_units:
@@ -812,7 +1117,7 @@ def validate_analysis(payload: Any) -> dict[str, Any]:
                 }
             )
 
-        expected_units = build_learning_units(sentence, atoms)
+        expected_units = build_learning_units(sentence, atoms, active_rules)
         if units != expected_units:
             raise ConfigurationError(
                 f"{location}.learning_units do not match deterministic progression"
