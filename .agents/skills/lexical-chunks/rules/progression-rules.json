@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 4,
   "content_pos": ["ADJ", "ADV", "NOUN", "NUM", "PROPN", "VERB"],
   "excluded_pos": ["AUX", "CCONJ", "DET", "PART", "PRON", "SCONJ"],
   "excluded_dependencies": [
@@ -23,5 +23,16 @@
     "s": ["ADJ"],
     "v": ["VERB"]
   },
-  "combination_direction": "right_to_left"
+  "combination_strategy": "nominal_phrase_first_right_fold",
+  "nominal_head_pos": ["NOUN", "PROPN"],
+  "nominal_premodifier_dependencies": [
+    "advmod",
+    "amod",
+    "compound",
+    "nummod",
+    "npadvmod",
+    "quantmod"
+  ],
+  "verb_particle_head_pos": ["VERB"],
+  "verb_particle_dependencies": ["prt"]
 }
