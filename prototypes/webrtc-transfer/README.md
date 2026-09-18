@@ -32,3 +32,6 @@ can replace it without rebuilding the page.
 
 The page surfaces connection state, selected ICE candidates, byte counts, timings,
 hash verification, and IndexedDB state so the feasibility verdict can be recorded.
+
+See [RESULTS.md](./RESULTS.md) for the measured desktop result and the remaining
+iPhone acceptance check.
