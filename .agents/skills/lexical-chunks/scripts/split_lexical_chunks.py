@@ -33,9 +33,9 @@ MODEL_DISTRIBUTION = "en-core-web-sm"
 MODEL_VERSION = "3.8.0"
 DEFAULT_OUTPUT = Path("outputs/lexical-chunks/text.learning-units.md")
 DEFAULT_RULES = Path(__file__).resolve().parents[1] / "rules" / "progression-rules.json"
-ANALYSIS_SCHEMA_VERSION = 6
-ANNOTATION_SCHEMA_VERSION = 6
-RULE_SCHEMA_VERSION = 4
+ANALYSIS_SCHEMA_VERSION = 7
+ANNOTATION_SCHEMA_VERSION = 7
+RULE_SCHEMA_VERSION = 5
 SENTENCE_PATTERN = re.compile(
     r".*?[.!?]+(?:[\"'’”’\)\]]+)?(?=\s|$)|.+$",
     re.DOTALL,
@@ -102,6 +102,8 @@ class ProgressionRules:
     combination_strategy: str
     nominal_head_pos: frozenset[str]
     nominal_premodifier_dependencies: frozenset[str]
+    nominal_postmodifier_object_dependencies: frozenset[str]
+    nominal_postmodifier_bridge_dependencies: frozenset[str]
     verb_particle_head_pos: frozenset[str]
     verb_particle_dependencies: frozenset[str]
 
@@ -222,6 +224,8 @@ def load_rules(path: Path = DEFAULT_RULES) -> ProgressionRules:
             "combination_strategy",
             "nominal_head_pos",
             "nominal_premodifier_dependencies",
+            "nominal_postmodifier_object_dependencies",
+            "nominal_postmodifier_bridge_dependencies",
             "verb_particle_head_pos",
             "verb_particle_dependencies",
         },
@@ -261,6 +265,14 @@ def load_rules(path: Path = DEFAULT_RULES) -> ProgressionRules:
         payload["nominal_premodifier_dependencies"],
         "nominal_premodifier_dependencies",
     )
+    nominal_postmodifier_object_dependencies = _non_empty_string_set(
+        payload["nominal_postmodifier_object_dependencies"],
+        "nominal_postmodifier_object_dependencies",
+    )
+    nominal_postmodifier_bridge_dependencies = _non_empty_string_set(
+        payload["nominal_postmodifier_bridge_dependencies"],
+        "nominal_postmodifier_bridge_dependencies",
+    )
     verb_particle_head_pos = _non_empty_string_set(
         payload["verb_particle_head_pos"], "verb_particle_head_pos"
     )
@@ -275,6 +287,8 @@ def load_rules(path: Path = DEFAULT_RULES) -> ProgressionRules:
         strategy,
         nominal_head_pos,
         nominal_dependencies,
+        nominal_postmodifier_object_dependencies,
+        nominal_postmodifier_bridge_dependencies,
         verb_particle_head_pos,
         verb_particle_dependencies,
     )
@@ -712,6 +726,63 @@ def _nominal_core_groups(
     return groups
 
 
+def _postmodifier_group_attaches(
+    left_group: Sequence[tuple[int, Mapping[str, Any]]],
+    candidate_group: Sequence[tuple[int, Mapping[str, Any]]],
+    atoms: Sequence[Mapping[str, Any]],
+    rules: ProgressionRules,
+) -> bool:
+    candidate_index, candidate = candidate_group[-1]
+    object_dependencies = rules.nominal_postmodifier_object_dependencies
+    if (
+        candidate["head_pos"] not in rules.nominal_head_pos
+        or candidate["head_dep"] not in object_dependencies
+    ):
+        return False
+
+    bridge_index = candidate["head_atom"]
+    if not isinstance(bridge_index, int) or not 0 <= bridge_index < len(atoms):
+        return False
+    bridge = atoms[bridge_index]
+    anchor_index = bridge["head_atom"]
+    nominal_anchors = {
+        atom_index
+        for atom_index, atom in left_group
+        if atom["head_pos"] in rules.nominal_head_pos
+    }
+    return (
+        not bridge["core"]
+        and bridge["head_dep"] in rules.nominal_postmodifier_bridge_dependencies
+        and isinstance(anchor_index, int)
+        and anchor_index in nominal_anchors
+        and anchor_index < bridge_index < candidate_group[0][0] <= candidate_index
+    )
+
+
+def _merge_nominal_postmodifier_groups(
+    groups: Sequence[list[tuple[int, Mapping[str, Any]]]],
+    atoms: Sequence[Mapping[str, Any]],
+    rules: ProgressionRules,
+) -> tuple[
+    list[list[tuple[int, Mapping[str, Any]]]],
+    list[list[tuple[int, Mapping[str, Any]]]],
+]:
+    merged_groups: list[list[tuple[int, Mapping[str, Any]]]] = []
+    phrase_stages: list[list[tuple[int, Mapping[str, Any]]]] = []
+    group_position = 0
+    while group_position < len(groups):
+        merged = list(groups[group_position])
+        group_position += 1
+        while group_position < len(groups) and _postmodifier_group_attaches(
+            merged, groups[group_position], atoms, rules
+        ):
+            merged.extend(groups[group_position])
+            phrase_stages.append(list(merged))
+            group_position += 1
+        merged_groups.append(merged)
+    return merged_groups, phrase_stages
+
+
 def _composition_unit(
     sentence: str,
     left: Mapping[str, Any],
@@ -746,11 +817,14 @@ def build_learning_units(
     if len(cores) < 2:
         return units
 
-    groups = _nominal_core_groups(atoms, rules)
+    premodifier_groups = _nominal_core_groups(atoms, rules)
+    groups, postmodifier_stages = _merge_nominal_postmodifier_groups(
+        premodifier_groups, atoms, rules
+    )
     total_core_count = len(cores)
     composition_ranges: set[tuple[int, int]] = set()
 
-    for group in groups:
+    for group in premodifier_groups:
         if len(group) < 2:
             continue
         for core_count in range(2, len(group) + 1):
@@ -764,6 +838,18 @@ def build_learning_units(
             if identity not in composition_ranges:
                 units.append(unit)
                 composition_ranges.add(identity)
+
+    for phrase_cores in postmodifier_stages:
+        core_count = len(phrase_cores)
+        if core_count >= total_core_count:
+            continue
+        unit = _composition_unit(
+            sentence, phrase_cores[0][1], phrase_cores[-1][1], core_count
+        )
+        identity = (unit["start"], unit["end"])
+        if identity not in composition_ranges:
+            units.append(unit)
+            composition_ranges.add(identity)
 
     if len(groups) < 2:
         return units

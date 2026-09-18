@@ -12,13 +12,15 @@ description: 将英文教材按确定性实义核心和渐进组合规则生成�
 - OEWN 最长非重叠匹配保留 lemma、词典词性和匹配方式，再与当前句的词性及语法角色共同判断实义核心；未被 OEWN 覆盖的名词、实义动词、形容词、副词等由上下文规则补充。
 - 多词 OEWN 表达优先于句法回退。词典未覆盖时，固定句法模型标为连续 `VERB + prt` 的动词小品词结构直接成为一个不可拆的实义核心；非连续结构不在当前范围。
 - 功能性词性或语法角色优先排除。OEWN 表层直接命中且不承担功能角色时，可抵抗统计模型的上下文词性误标；规则不维护教材词汇白名单。
-- 所有实义核心先按原文顺序独立出题。连续的名词前置修饰结构先从中心词向左组成自然名词短语；这些短语作为不可拆的已学单元，再从右向左组合。组合始终把单元之间的原文完整带入。
+- 所有实义核心先按原文顺序独立出题。连续的名词前置修饰结构先从中心词向左组成自然名词短语，再按固定依存链吸收右侧简单介词修饰；这些短语作为不可拆的已学单元，再从右向左组合。组合始终把单元之间的原文完整带入。
 - 冠词、代词、系动词、助动词、介词和连词等连接成分随组合进入，不独立出题。完整原句由渲染器追加为最后一步。
 - 中文提示表达对应英文单元在当前句中的自然含义。中文可能对应多种英语；本练习只检查教材表达复现。
 
 例如 `Birdsong is good for our mental health.` 固定生成：`Birdsong`、`good`、`mental health`、`good for our mental health`，最后是完整原句。`for our` 在组合 `good` 与 `mental health` 时进入，`is` 在最终组合时进入。
 
 在 `more green spaces and lower speed limits` 中，脚本先生成 `green spaces`、`more green spaces` 和 `lower speed limits`，再组合完整并列短语；不会生成破坏名词短语边界的 `spaces and lower speed limits`。
+
+在 `noise from traffic is annoying` 中，脚本先生成 `noise from traffic`，再把整个名词短语与谓语组合；不会生成改变主语含义的 `traffic is annoying`。
 
 ## 执行
 
@@ -29,13 +31,13 @@ description: 将英文教材按确定性实义核心和渐进组合规则生成�
      --analysis-output <临时目录>/analysis.json
    ```
 
-   脚本打印实际分析文件的绝对路径。分析 JSON 使用 schema 6，每句的 `atoms` 保存 OEWN 或句法回退证据、词性、依存角色和 `head_atom` 关系；`learning_units` 已包含不可修改的英文、原文范围、类型和实义核心数量。
+   脚本打印实际分析文件的绝对路径。分析 JSON 使用 schema 7，每句的 `atoms` 保存 OEWN 或句法回退证据、词性、依存角色和 `head_atom` 关系；`learning_units` 已包含不可修改的英文、原文范围、类型和实义核心数量。
 
 2. 按 `learning_units` 的现有顺序生成严格对齐的简体中文提示，不重复英文：
 
    ```json
    {
-     "schema_version": 6,
+     "schema_version": 7,
      "sentences": [
        {
          "unit_prompts": ["逐单元自然中文提示"],

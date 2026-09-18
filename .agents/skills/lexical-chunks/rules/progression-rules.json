@@ -1,5 +1,5 @@
 {
-  "schema_version": 4,
+  "schema_version": 5,
   "content_pos": ["ADJ", "ADV", "NOUN", "NUM", "PROPN", "VERB"],
   "excluded_pos": ["AUX", "CCONJ", "DET", "PART", "PRON", "SCONJ"],
   "excluded_dependencies": [
@@ -33,6 +33,8 @@
     "npadvmod",
     "quantmod"
   ],
+  "nominal_postmodifier_object_dependencies": ["pobj"],
+  "nominal_postmodifier_bridge_dependencies": ["prep"],
   "verb_particle_head_pos": ["VERB"],
   "verb_particle_dependencies": ["prt"]
 }

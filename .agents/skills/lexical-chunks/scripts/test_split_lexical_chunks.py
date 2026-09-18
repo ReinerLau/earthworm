@@ -74,6 +74,8 @@ RULES = ProgressionRules(
     nominal_premodifier_dependencies=frozenset(
         {"advmod", "amod", "compound", "nummod", "npadvmod", "quantmod"}
     ),
+    nominal_postmodifier_object_dependencies=frozenset({"pobj"}),
+    nominal_postmodifier_bridge_dependencies=frozenset({"prep"}),
     verb_particle_head_pos=frozenset({"VERB"}),
     verb_particle_dependencies=frozenset({"prt"}),
 )
@@ -176,7 +178,7 @@ class SplitLexicalChunksTests(TestCase):
     @staticmethod
     def sample_analysis():
         return {
-            "schema_version": 6,
+            "schema_version": 7,
             "sentences": [
                 {
                     "sentence": "Dogs bark.",
@@ -231,7 +233,7 @@ class SplitLexicalChunksTests(TestCase):
     @staticmethod
     def sample_annotations():
         return {
-            "schema_version": 6,
+            "schema_version": 7,
             "sentences": [
                 {
                     "unit_prompts": ["狗", "吠叫"],
@@ -275,6 +277,12 @@ class SplitLexicalChunksTests(TestCase):
         self.assertEqual(rules.combination_strategy, "nominal_phrase_first_right_fold")
         self.assertEqual(rules.nominal_head_pos, frozenset({"NOUN", "PROPN"}))
         self.assertIn("amod", rules.nominal_premodifier_dependencies)
+        self.assertEqual(
+            rules.nominal_postmodifier_object_dependencies, frozenset({"pobj"})
+        )
+        self.assertEqual(
+            rules.nominal_postmodifier_bridge_dependencies, frozenset({"prep"})
+        )
         self.assertEqual(rules.verb_particle_head_pos, frozenset({"VERB"}))
         self.assertEqual(rules.verb_particle_dependencies, frozenset({"prt"}))
         self.assertFalse(hasattr(rules, "force_core_forms"))
@@ -553,6 +561,144 @@ class SplitLexicalChunksTests(TestCase):
             [unit["text"] for unit in analysis["learning_units"]],
         )
 
+    def test_nominal_postmodifier_is_protected_before_the_right_fold(self):
+        sentence = (
+            "Conversely, noise from traffic is annoying and can increase our stress."
+        )
+        analysis = self.analysis(
+            sentence,
+            analyze=analyze_with_specs(
+                [
+                    ("ADV", "advmod", 4),
+                    ("NOUN", "nsubj", 4),
+                    ("ADP", "prep", 1),
+                    ("NOUN", "pobj", 2),
+                    ("AUX", "ROOT", 4),
+                    ("ADJ", "acomp", 4),
+                    ("CCONJ", "cc", 8),
+                    ("AUX", "aux", 8),
+                    ("VERB", "conj", 4),
+                    ("PRON", "poss", 10),
+                    ("NOUN", "dobj", 8),
+                ]
+            ),
+        )["sentences"][0]
+
+        self.assertEqual(
+            [(unit["text"], unit["core_count"]) for unit in analysis["learning_units"]],
+            [
+                ("Conversely", 1),
+                ("noise", 1),
+                ("traffic", 1),
+                ("annoying", 1),
+                ("increase", 1),
+                ("stress", 1),
+                ("noise from traffic", 2),
+                ("increase our stress", 2),
+                ("annoying and can increase our stress", 3),
+                ("noise from traffic is annoying and can increase our stress", 5),
+            ],
+        )
+        self.assertNotIn(
+            "traffic is annoying and can increase our stress",
+            [unit["text"] for unit in analysis["learning_units"]],
+        )
+
+    def test_postmodifier_preserves_the_object_premodifier_group(self):
+        sentence = "Noise from heavy traffic affects health."
+        analysis = self.analysis(
+            sentence,
+            analyze=analyze_with_specs(
+                [
+                    ("NOUN", "nsubj", 4),
+                    ("ADP", "prep", 0),
+                    ("ADJ", "amod", 3),
+                    ("NOUN", "pobj", 1),
+                    ("VERB", "ROOT", 4),
+                    ("NOUN", "dobj", 4),
+                ]
+            ),
+        )["sentences"][0]
+
+        self.assertEqual(
+            [
+                (unit["text"], unit["core_count"])
+                for unit in analysis["learning_units"]
+                if unit["kind"] == "composition"
+            ],
+            [
+                ("heavy traffic", 2),
+                ("Noise from heavy traffic", 3),
+                ("affects health", 2),
+            ],
+        )
+
+    def test_multiple_and_nested_nominal_postmodifiers_expand_left_to_right(self):
+        examples = [
+            (
+                "Effects of birdsong on mood matter.",
+                [
+                    ("NOUN", "nsubj", 5),
+                    ("ADP", "prep", 0),
+                    ("NOUN", "pobj", 1),
+                    ("ADP", "prep", 0),
+                    ("NOUN", "pobj", 3),
+                    ("VERB", "ROOT", 5),
+                ],
+                ["Effects of birdsong", "Effects of birdsong on mood"],
+            ),
+            (
+                "Noise from traffic in cities matters.",
+                [
+                    ("NOUN", "nsubj", 5),
+                    ("ADP", "prep", 0),
+                    ("NOUN", "pobj", 1),
+                    ("ADP", "prep", 2),
+                    ("NOUN", "pobj", 3),
+                    ("VERB", "ROOT", 5),
+                ],
+                ["Noise from traffic", "Noise from traffic in cities"],
+            ),
+        ]
+        for sentence, specs, expected in examples:
+            with self.subTest(sentence=sentence):
+                analysis = self.analysis(
+                    sentence, analyze=analyze_with_specs(specs)
+                )["sentences"][0]
+
+                self.assertEqual(
+                    [
+                        unit["text"]
+                        for unit in analysis["learning_units"]
+                        if unit["kind"] == "composition"
+                    ],
+                    expected,
+                )
+
+    def test_verb_prepositional_complement_is_not_a_nominal_postmodifier(self):
+        sentence = "They listened to birdsong and rested."
+        analysis = self.analysis(
+            sentence,
+            analyze=analyze_with_specs(
+                [
+                    ("PRON", "nsubj", 1),
+                    ("VERB", "ROOT", 1),
+                    ("ADP", "prep", 1),
+                    ("NOUN", "pobj", 2),
+                    ("CCONJ", "cc", 5),
+                    ("VERB", "conj", 1),
+                ]
+            ),
+        )["sentences"][0]
+
+        compositions = [
+            unit["text"]
+            for unit in analysis["learning_units"]
+            if unit["kind"] == "composition"
+        ]
+        self.assertEqual(compositions, ["birdsong and rested"])
+        self.assertNotIn("listened to birdsong", compositions)
+
     def test_coordinated_nominal_phrases_are_built_separately(self):
         sentence = "They listened to natural sounds and traffic noise."
         analysis = self.analysis(
@@ -678,7 +824,7 @@ class SplitLexicalChunksTests(TestCase):
             atoms,
         )
 
-    def test_builds_schema_six_analysis(self):
+    def test_builds_schema_seven_analysis(self):
         self.assertEqual(
             self.analysis("Dogs bark.", ["dog", "bark"]),
             self.sample_analysis(),
@@ -775,11 +921,11 @@ class SplitLexicalChunksTests(TestCase):
         with self.assertRaisesRegex(ConfigurationError, "must be a core"):
             validate_analysis(invalid)
 
-    def test_rejects_schema_five_analysis(self):
+    def test_rejects_schema_six_analysis(self):
         payload = self.sample_analysis()
-        payload["schema_version"] = 5
+        payload["schema_version"] = 6
 
-        with self.assertRaisesRegex(ConfigurationError, "schema_version 6"):
+        with self.assertRaisesRegex(ConfigurationError, "schema_version 7"):
             validate_analysis(payload)
 
     def test_rejects_missing_or_invalid_head_atom(self):
@@ -826,17 +972,17 @@ class SplitLexicalChunksTests(TestCase):
         with self.assertRaisesRegex(ConfigurationError, "not valid JSON"):
             parse_annotations("{", self.sample_analysis())
 
-    def test_rejects_schema_five_annotations(self):
+    def test_rejects_schema_six_annotations(self):
         payload = self.sample_annotations()
-        payload["schema_version"] = 5
+        payload["schema_version"] = 6
 
-        with self.assertRaisesRegex(ConfigurationError, "schema_version 6"):
+        with self.assertRaisesRegex(ConfigurationError, "schema_version 7"):
             parse_annotations(json.dumps(payload), self.sample_analysis())
 
     def test_rejects_missing_or_extra_sentence_annotations(self):
         for sentences in ([], self.sample_annotations()["sentences"] * 2):
             with self.subTest(count=len(sentences)):
-                payload = {"schema_version": 6, "sentences": sentences}
+                payload = {"schema_version": 7, "sentences": sentences}
                 with self.assertRaisesRegex(ConfigurationError, "exactly 1 items"):
                     parse_annotations(json.dumps(payload), self.sample_analysis())
 
@@ -870,7 +1016,7 @@ class SplitLexicalChunksTests(TestCase):
             ["birdsong", "be", "good", "mental health"],
         )
         annotations = {
-            "schema_version": 6,
+            "schema_version": 7,
             "sentences": [
                 {
                     "unit_prompts": [
