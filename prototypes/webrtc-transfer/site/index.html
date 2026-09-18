@@ -1,0 +1,828 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta
+      name="theme-color"
+      content="#152019"
+    />
+    <meta
+      name="apple-mobile-web-app-capable"
+      content="yes"
+    />
+    <meta
+      name="apple-mobile-web-app-status-bar-style"
+      content="black-translucent"
+    />
+    <title>Earthworm 局域网传输原型</title>
+    <link
+      rel="manifest"
+      href="./manifest.webmanifest"
+    />
+    <style>
+      :root {
+        color-scheme: light;
+        font-family:
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+        background: #f4f1e8;
+        color: #152019;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: max(20px, env(safe-area-inset-top)) 16px 40px;
+      }
+      main {
+        width: min(760px, 100%);
+        margin: 0 auto;
+      }
+      h1 {
+        font-size: clamp(24px, 7vw, 42px);
+        line-height: 1.05;
+        margin: 8px 0;
+      }
+      h2 {
+        font-size: 18px;
+        margin: 0 0 14px;
+      }
+      p {
+        line-height: 1.55;
+      }
+      .question {
+        color: #4d5d52;
+        margin: 0 0 24px;
+      }
+      .card {
+        background: #fffdf7;
+        border: 1px solid #cfd7cc;
+        border-radius: 14px;
+        padding: 18px;
+        margin: 14px 0;
+        box-shadow: 0 5px 20px #1f2b2212;
+      }
+      .grid {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      }
+      label {
+        display: grid;
+        gap: 6px;
+        color: #435047;
+        font-size: 13px;
+      }
+      input,
+      select,
+      button {
+        width: 100%;
+        min-height: 44px;
+        border-radius: 9px;
+        border: 1px solid #9ca99f;
+        font: inherit;
+      }
+      input,
+      select {
+        padding: 9px 11px;
+        background: white;
+      }
+      button {
+        padding: 9px 14px;
+        background: #1f6f43;
+        color: white;
+        border-color: #1f6f43;
+        font-weight: 650;
+        cursor: pointer;
+      }
+      button.secondary {
+        background: transparent;
+        color: #1f6f43;
+      }
+      button:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+      .room {
+        font:
+          700 28px ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          monospace;
+        letter-spacing: 0.16em;
+        color: #1f6f43;
+        text-transform: uppercase;
+      }
+      #pairing {
+        margin: 14px 0;
+        text-align: center;
+      }
+      #pairQr {
+        width: min(260px, 80vw);
+        height: auto;
+        image-rendering: pixelated;
+        border: 10px solid white;
+      }
+      #pairUrl {
+        display: block;
+        overflow-wrap: anywhere;
+      }
+      dl {
+        display: grid;
+        grid-template-columns: 130px 1fr;
+        gap: 7px 12px;
+        margin: 0;
+        font-size: 14px;
+      }
+      dt {
+        color: #667369;
+      }
+      dd {
+        margin: 0;
+        overflow-wrap: anywhere;
+      }
+      .good {
+        color: #087836;
+        font-weight: 650;
+      }
+      .bad {
+        color: #a42c23;
+        font-weight: 650;
+      }
+      #log {
+        min-height: 120px;
+        max-height: 260px;
+        overflow: auto;
+        white-space: pre-wrap;
+        background: #152019;
+        color: #d9eadc;
+        padding: 12px;
+        border-radius: 9px;
+        font:
+          12px/1.55 ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          monospace;
+      }
+      small {
+        color: #667369;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Earthworm 点对点传输原型</h1>
+      <p class="question">
+        要验证的问题：GitHub Pages 上的 iPhone PWA，能否借助 Cloudflare 临时交换连接信息，然后把课程
+        JSON 直接传给同一 Wi‑Fi 下的桌面客户端，并在离线重开后保留数据？
+      </p>
+
+      <section class="card">
+        <h2>1. 连接</h2>
+        <div class="grid">
+          <label
+            >信令服务
+            <input
+              id="signalUrl"
+              type="url"
+              placeholder="https://…workers.dev"
+              autocomplete="url"
+            />
+          </label>
+          <label
+            >本机角色
+            <select id="role">
+              <option value="sender">电脑：发送课程</option>
+              <option value="receiver">iPhone：接收课程</option>
+            </select>
+          </label>
+          <label id="roomInputWrap"
+            >房间码
+            <input
+              id="roomInput"
+              inputmode="text"
+              maxlength="8"
+              placeholder="8 位房间码"
+              autocapitalize="characters"
+            />
+          </label>
+        </div>
+        <p
+          id="roomDisplay"
+          hidden
+        >
+          房间码：<span class="room"></span>
+        </p>
+        <div
+          id="pairing"
+          hidden
+        >
+          <img
+            id="pairQr"
+            alt="iPhone 配对二维码"
+          />
+          <small>iPhone 相机扫描后会打开接收页并自动加入这个房间。</small>
+          <small id="pairUrl"></small>
+        </div>
+        <button id="connect">创建房间</button>
+        <small>信令只交换 WebRTC 连接信息，课程内容不经过 Worker。原型不配置 TURN。</small>
+      </section>
+
+      <section class="card">
+        <h2>2. 传输验证</h2>
+        <div class="grid">
+          <button
+            id="sendCourse"
+            disabled
+          >
+            发送最大真实课程
+          </button>
+          <button
+            id="sendSynthetic"
+            disabled
+          >
+            发送 1 MB 合成 JSON
+          </button>
+          <button
+            id="loadSaved"
+            class="secondary"
+          >
+            读取本机已保存数据
+          </button>
+          <button
+            id="clearSaved"
+            class="secondary"
+          >
+            清除本机数据
+          </button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>可观察状态</h2>
+        <dl>
+          <dt>角色</dt>
+          <dd id="stateRole">未选择</dd>
+          <dt>房间</dt>
+          <dd id="stateRoom">—</dd>
+          <dt>信令</dt>
+          <dd id="stateSignal">未连接</dd>
+          <dt>Peer</dt>
+          <dd id="statePeer">未创建</dd>
+          <dt>DataChannel</dt>
+          <dd id="stateChannel">未创建</dd>
+          <dt>ICE 路径</dt>
+          <dd id="stateIce">—</dd>
+          <dt>最近传输</dt>
+          <dd id="stateTransfer">—</dd>
+          <dt>IndexedDB</dt>
+          <dd id="stateDb">未检查</dd>
+          <dt>网络状态</dt>
+          <dd id="stateNetwork">—</dd>
+        </dl>
+      </section>
+
+      <section class="card">
+        <h2>事件日志</h2>
+        <div
+          id="log"
+          role="log"
+          aria-live="polite"
+        ></div>
+      </section>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+    <script>
+      const DEFAULT_SIGNAL_URL =
+        "https://earthworm-webrtc-prototype.inquisitive-guest-479.workers.dev";
+      const CHUNK_SIZE = 16 * 1024;
+      const DB_NAME = "earthworm-webrtc-prototype";
+      const DB_VERSION = 1;
+      const STORE_NAME = "courses";
+      const alphabet = "abcdefghjkmnpqrstuvwxyz23456789";
+
+      const $ = (id) => document.getElementById(id);
+      const ui = {
+        signalUrl: $("signalUrl"),
+        role: $("role"),
+        roomInput: $("roomInput"),
+        roomInputWrap: $("roomInputWrap"),
+        roomDisplay: $("roomDisplay"),
+        connect: $("connect"),
+        pairing: $("pairing"),
+        pairQr: $("pairQr"),
+        pairUrl: $("pairUrl"),
+        sendCourse: $("sendCourse"),
+        sendSynthetic: $("sendSynthetic"),
+        loadSaved: $("loadSaved"),
+        clearSaved: $("clearSaved"),
+        log: $("log"),
+      };
+
+      let ws;
+      let peer;
+      let channel;
+      let role;
+      let room;
+      let pendingCandidates = [];
+      let incoming = null;
+      let receiveQueue = Promise.resolve();
+      const outgoing = new Map();
+
+      function setState(name, value, className = "") {
+        const node = $("state" + name);
+        node.textContent = value;
+        node.className = className;
+      }
+
+      function log(message) {
+        const timestamp = new Date().toLocaleTimeString();
+        ui.log.textContent += `[${timestamp}] ${message}\n`;
+        ui.log.scrollTop = ui.log.scrollHeight;
+      }
+
+      function updateNetworkState() {
+        setState(
+          "Network",
+          navigator.onLine ? "浏览器报告在线" : "浏览器报告离线",
+          navigator.onLine ? "" : "bad",
+        );
+      }
+
+      function randomRoom() {
+        const bytes = crypto.getRandomValues(new Uint8Array(8));
+        return Array.from(bytes, (byte) => alphabet[byte % alphabet.length]).join("");
+      }
+
+      function normalizeSignalUrl(raw) {
+        const url = new URL(raw.trim());
+        if (!/^https?:$/.test(url.protocol))
+          throw new Error("信令地址必须以 http:// 或 https:// 开头");
+        url.pathname = url.pathname.replace(/\/$/, "");
+        return url.toString().replace(/\/$/, "");
+      }
+
+      function toWebSocketUrl(base, roomCode, selectedRole) {
+        const url = new URL(`${base}/signal/${roomCode}`);
+        url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+        url.searchParams.set("role", selectedRole);
+        return url.toString();
+      }
+
+      function sendSignal(payload) {
+        if (!ws || ws.readyState !== WebSocket.OPEN) throw new Error("信令尚未连接");
+        ws.send(JSON.stringify(payload));
+      }
+
+      function renderPairingQr(signalBase) {
+        if (role !== "sender") return;
+        const url = new URL(location.href);
+        url.search = "";
+        url.searchParams.set("signal", signalBase);
+        url.searchParams.set("role", "receiver");
+        url.searchParams.set("room", room);
+        ui.pairUrl.textContent = url.toString();
+        if (typeof qrcode !== "function") {
+          log("二维码库未加载，可复制页面显示的配对链接");
+          ui.pairing.hidden = false;
+          return;
+        }
+        const code = qrcode(0, "M");
+        code.addData(url.toString());
+        code.make();
+        ui.pairQr.src = code.createDataURL(6, 8);
+        ui.pairing.hidden = false;
+      }
+
+      async function createPeer() {
+        peer?.close();
+        pendingCandidates = [];
+        peer = new RTCPeerConnection({
+          iceServers: [{ urls: "stun:stun.cloudflare.com:3478" }],
+        });
+        setState("Peer", "已创建，等待协商");
+
+        peer.onicecandidate = ({ candidate }) => {
+          if (candidate) sendSignal({ type: "candidate", candidate });
+        };
+        peer.onconnectionstatechange = () => {
+          setState(
+            "Peer",
+            peer.connectionState,
+            peer.connectionState === "connected" ? "good" : "",
+          );
+          log(`Peer 状态：${peer.connectionState}`);
+          if (peer.connectionState === "connected") inspectIcePath();
+        };
+        peer.oniceconnectionstatechange = () => log(`ICE 状态：${peer.iceConnectionState}`);
+        peer.ondatachannel = ({ channel: receivedChannel }) => setupChannel(receivedChannel);
+
+        if (role === "sender") setupChannel(peer.createDataChannel("courses", { ordered: true }));
+      }
+
+      function setupChannel(nextChannel) {
+        channel = nextChannel;
+        channel.binaryType = "arraybuffer";
+        channel.bufferedAmountLowThreshold = 256 * 1024;
+        setState("Channel", channel.readyState);
+        channel.onopen = () => {
+          setState("Channel", "open", "good");
+          ui.sendCourse.disabled = role !== "sender";
+          ui.sendSynthetic.disabled = role !== "sender";
+          log("DataChannel 已打开");
+        };
+        channel.onclose = () => {
+          setState("Channel", "closed", "bad");
+          ui.sendCourse.disabled = true;
+          ui.sendSynthetic.disabled = true;
+          log("DataChannel 已关闭");
+        };
+        channel.onerror = () => log("DataChannel 发生错误");
+        channel.onmessage = ({ data }) => {
+          receiveQueue = receiveQueue
+            .then(() => handleDataMessage(data))
+            .catch((error) => {
+              setState("Transfer", `失败：${error.message}`, "bad");
+              log(`接收失败：${error.message}`);
+            });
+        };
+      }
+
+      async function startOffer() {
+        const offer = await peer.createOffer();
+        await peer.setLocalDescription(offer);
+        sendSignal({ type: "offer", description: peer.localDescription });
+        log("已发送 offer");
+      }
+
+      async function handleSignal(message) {
+        if (message.type === "peer-ready") {
+          log("另一端已进入房间");
+          if (role === "sender") await startOffer();
+          return;
+        }
+        if (message.type === "offer" && role === "receiver") {
+          await peer.setRemoteDescription(message.description);
+          await flushCandidates();
+          const answer = await peer.createAnswer();
+          await peer.setLocalDescription(answer);
+          sendSignal({ type: "answer", description: peer.localDescription });
+          log("已发送 answer");
+          return;
+        }
+        if (message.type === "answer" && role === "sender") {
+          await peer.setRemoteDescription(message.description);
+          await flushCandidates();
+          log("已接收 answer");
+          return;
+        }
+        if (message.type === "candidate") {
+          if (peer.remoteDescription) await peer.addIceCandidate(message.candidate);
+          else pendingCandidates.push(message.candidate);
+          return;
+        }
+        if (message.type === "peer-left") log("另一端已离开房间");
+      }
+
+      async function flushCandidates() {
+        for (const candidate of pendingCandidates.splice(0)) await peer.addIceCandidate(candidate);
+      }
+
+      async function connect() {
+        try {
+          role = ui.role.value;
+          room = role === "sender" ? randomRoom() : ui.roomInput.value.trim().toLowerCase();
+          if (!/^[a-z0-9]{8}$/.test(room)) throw new Error("房间码必须是 8 位字母或数字");
+          const signalBase = normalizeSignalUrl(ui.signalUrl.value);
+          localStorage.setItem("prototype-signal-url", signalBase);
+          setState("Role", role === "sender" ? "电脑 / 发送端" : "iPhone / 接收端");
+          setState("Room", room.toUpperCase());
+          ui.roomDisplay.hidden = false;
+          ui.roomDisplay.querySelector("span").textContent = room;
+          renderPairingQr(signalBase);
+          ui.connect.disabled = true;
+          await createPeer();
+
+          ws = new WebSocket(toWebSocketUrl(signalBase, room, role));
+          setState("Signal", "连接中");
+          ws.onopen = () => {
+            setState("Signal", "已连接", "good");
+            log(`信令已连接，房间 ${room.toUpperCase()}`);
+          };
+          ws.onmessage = ({ data }) => {
+            const message = JSON.parse(data);
+            handleSignal(message).catch((error) => {
+              setState("Peer", `协商失败：${error.message}`, "bad");
+              log(`协商失败：${error.message}`);
+            });
+          };
+          ws.onclose = ({ code, reason }) => {
+            setState(
+              "Signal",
+              `已断开 (${code}${reason ? `: ${reason}` : ""})`,
+              code === 1000 ? "" : "bad",
+            );
+            ui.connect.disabled = false;
+            log(`信令已断开：${code} ${reason}`);
+          };
+          ws.onerror = () => log("信令连接发生错误");
+        } catch (error) {
+          setState("Signal", `失败：${error.message}`, "bad");
+          ui.connect.disabled = false;
+          log(`连接失败：${error.message}`);
+        }
+      }
+
+      async function sha256(bytes) {
+        const digest = await crypto.subtle.digest("SHA-256", bytes);
+        return Array.from(new Uint8Array(digest), (byte) =>
+          byte.toString(16).padStart(2, "0"),
+        ).join("");
+      }
+
+      async function waitForBuffer() {
+        if (channel.bufferedAmount < 1024 * 1024) return;
+        await new Promise((resolve) => {
+          const done = () => {
+            channel.removeEventListener("bufferedamountlow", done);
+            resolve();
+          };
+          channel.addEventListener("bufferedamountlow", done, { once: true });
+        });
+      }
+
+      async function sendPayload(name, jsonText) {
+        if (channel?.readyState !== "open") throw new Error("DataChannel 未打开");
+        const bytes = new TextEncoder().encode(jsonText);
+        const digest = await sha256(bytes);
+        const id = crypto.randomUUID();
+        const totalChunks = Math.ceil(bytes.byteLength / CHUNK_SIZE);
+        outgoing.set(id, performance.now());
+        channel.send(
+          JSON.stringify({
+            kind: "metadata",
+            id,
+            name,
+            size: bytes.byteLength,
+            sha256: digest,
+            chunkSize: CHUNK_SIZE,
+            totalChunks,
+          }),
+        );
+        setState("Transfer", `发送 ${name}：0 / ${bytes.byteLength} bytes`);
+
+        for (let index = 0; index < totalChunks; index++) {
+          await waitForBuffer();
+          const start = index * CHUNK_SIZE;
+          const body = bytes.subarray(start, Math.min(start + CHUNK_SIZE, bytes.byteLength));
+          const packet = new Uint8Array(4 + body.byteLength);
+          new DataView(packet.buffer).setUint32(0, index);
+          packet.set(body, 4);
+          channel.send(packet.buffer);
+          setState(
+            "Transfer",
+            `发送 ${name}：${Math.min(start + body.byteLength, bytes.byteLength)} / ${bytes.byteLength} bytes`,
+          );
+        }
+        channel.send(JSON.stringify({ kind: "complete", id }));
+        log(`${name} 已写入 DataChannel，等待接收端校验`);
+      }
+
+      async function handleDataMessage(raw) {
+        if (typeof raw === "string") {
+          const message = JSON.parse(raw);
+          if (message.kind === "metadata") {
+            incoming = { ...message, chunks: new Map(), received: 0, startedAt: performance.now() };
+            setState("Transfer", `接收 ${message.name}：0 / ${message.size} bytes`);
+            log(`开始接收 ${message.name}，SHA-256 ${message.sha256}`);
+            return;
+          }
+          if (message.kind === "complete") {
+            await finishIncoming(message.id);
+            return;
+          }
+          if (message.kind === "verified") {
+            const startedAt = outgoing.get(message.id);
+            const roundTripMs = startedAt
+              ? Math.round(performance.now() - startedAt)
+              : message.durationMs;
+            outgoing.delete(message.id);
+            setState(
+              "Transfer",
+              `${message.name}：${message.bytes} bytes，SHA-256 一致，往返 ${roundTripMs} ms`,
+              "good",
+            );
+            log(`接收端确认 ${message.name} 完整，往返 ${roundTripMs} ms`);
+          }
+          return;
+        }
+
+        const buffer = raw instanceof Blob ? await raw.arrayBuffer() : raw;
+        if (!incoming) throw new Error("收到数据块前没有 metadata");
+        const view = new DataView(buffer);
+        const index = view.getUint32(0);
+        const body = new Uint8Array(buffer, 4);
+        incoming.chunks.set(index, body.slice());
+        incoming.received += body.byteLength;
+        setState(
+          "Transfer",
+          `接收 ${incoming.name}：${incoming.received} / ${incoming.size} bytes`,
+        );
+      }
+
+      async function finishIncoming(id) {
+        if (!incoming || incoming.id !== id) throw new Error("complete 与当前传输不匹配");
+        if (incoming.chunks.size !== incoming.totalChunks)
+          throw new Error(`数据块不完整：${incoming.chunks.size}/${incoming.totalChunks}`);
+        const bytes = new Uint8Array(incoming.size);
+        let offset = 0;
+        for (let index = 0; index < incoming.totalChunks; index++) {
+          const chunk = incoming.chunks.get(index);
+          if (!chunk) throw new Error(`缺少数据块 ${index}`);
+          bytes.set(chunk, offset);
+          offset += chunk.byteLength;
+        }
+        const digest = await sha256(bytes);
+        if (digest !== incoming.sha256) throw new Error(`SHA-256 不一致：${digest}`);
+        const data = JSON.parse(new TextDecoder().decode(bytes));
+        const durationMs = Math.round(performance.now() - incoming.startedAt);
+        await saveCourse({
+          id,
+          name: incoming.name,
+          bytes: incoming.size,
+          sha256: digest,
+          durationMs,
+          receivedAt: new Date().toISOString(),
+          data,
+        });
+        setState(
+          "Transfer",
+          `${incoming.name}：${incoming.size} bytes，SHA-256 一致，接收 ${durationMs} ms`,
+          "good",
+        );
+        log(`${incoming.name} 校验通过并已写入 IndexedDB`);
+        channel.send(
+          JSON.stringify({
+            kind: "verified",
+            id,
+            name: incoming.name,
+            bytes: incoming.size,
+            sha256: digest,
+            durationMs,
+          }),
+        );
+        incoming = null;
+      }
+
+      function openDb() {
+        return new Promise((resolve, reject) => {
+          const request = indexedDB.open(DB_NAME, DB_VERSION);
+          request.onupgradeneeded = () => request.result.createObjectStore(STORE_NAME);
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+      }
+
+      async function withStore(mode, operation) {
+        const db = await openDb();
+        return new Promise((resolve, reject) => {
+          const transaction = db.transaction(STORE_NAME, mode);
+          const request = operation(transaction.objectStore(STORE_NAME));
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+          transaction.oncomplete = () => db.close();
+        });
+      }
+
+      async function saveCourse(value) {
+        await withStore("readwrite", (store) => store.put(value, "latest"));
+        setState("Db", `${value.name}，${value.bytes} bytes，${value.receivedAt}`, "good");
+      }
+
+      async function loadSaved() {
+        const value = await withStore("readonly", (store) => store.get("latest"));
+        if (!value) {
+          setState("Db", "没有已保存数据");
+          log("IndexedDB 中没有课程");
+          return;
+        }
+        setState("Db", `${value.name}，${value.bytes} bytes，${value.receivedAt}`, "good");
+        log(`读取到 ${value.name}；SHA-256 ${value.sha256}`);
+      }
+
+      async function clearSaved() {
+        await withStore("readwrite", (store) => store.delete("latest"));
+        setState("Db", "已清除");
+        log("已清除 IndexedDB 数据");
+      }
+
+      async function inspectIcePath() {
+        const stats = await peer.getStats();
+        let pair;
+        stats.forEach((report) => {
+          if (report.type === "transport" && report.selectedCandidatePairId)
+            pair = stats.get(report.selectedCandidatePairId);
+          if (
+            !pair &&
+            report.type === "candidate-pair" &&
+            report.state === "succeeded" &&
+            report.nominated
+          )
+            pair = report;
+        });
+        if (!pair) return setState("Ice", "已连接，但未找到 candidate pair");
+        const local = stats.get(pair.localCandidateId);
+        const remote = stats.get(pair.remoteCandidateId);
+        const describe = (candidate) =>
+          candidate
+            ? `${candidate.candidateType}/${candidate.protocol}${candidate.address ? ` ${candidate.address}:${candidate.port}` : ""}`
+            : "未知";
+        setState("Ice", `${describe(local)} → ${describe(remote)}`, "good");
+        log(`ICE 路径：${describe(local)} → ${describe(remote)}`);
+      }
+
+      async function sendRealCourse() {
+        try {
+          const response = await fetch("./sample-course.json");
+          if (!response.ok) throw new Error(`读取 sample-course.json 失败：${response.status}`);
+          await sendPayload("真实课程 12.json", await response.text());
+        } catch (error) {
+          setState("Transfer", `失败：${error.message}`, "bad");
+          log(`发送失败：${error.message}`);
+        }
+      }
+
+      async function sendSynthetic() {
+        try {
+          const item = {
+            chinese: "原型传输验证",
+            english: "Prototype transfer verification.",
+            soundmark: "/ˈprəʊtətaɪp/",
+          };
+          const json = JSON.stringify({
+            schema_version: 1,
+            statements: [item],
+            padding: "x".repeat(1024 * 1024),
+          });
+          await sendPayload("1 MB 合成课程", json);
+        } catch (error) {
+          setState("Transfer", `失败：${error.message}`, "bad");
+          log(`发送失败：${error.message}`);
+        }
+      }
+
+      function syncRoleUi() {
+        const isSender = ui.role.value === "sender";
+        ui.roomInputWrap.hidden = isSender;
+        ui.connect.textContent = isSender ? "创建房间" : "加入房间";
+      }
+
+      const initialParams = new URLSearchParams(location.search);
+      ui.signalUrl.value =
+        initialParams.get("signal") ||
+        localStorage.getItem("prototype-signal-url") ||
+        (DEFAULT_SIGNAL_URL.startsWith("http") ? DEFAULT_SIGNAL_URL : "");
+      if (initialParams.get("role") === "receiver") ui.role.value = "receiver";
+      if (/^[a-z0-9]{8}$/.test(initialParams.get("room") || ""))
+        ui.roomInput.value = initialParams.get("room");
+      ui.role.addEventListener("change", syncRoleUi);
+      ui.connect.addEventListener("click", connect);
+      ui.sendCourse.addEventListener("click", sendRealCourse);
+      ui.sendSynthetic.addEventListener("click", sendSynthetic);
+      ui.loadSaved.addEventListener("click", () =>
+        loadSaved().catch((error) => log(`读取失败：${error.message}`)),
+      );
+      ui.clearSaved.addEventListener("click", () =>
+        clearSaved().catch((error) => log(`清除失败：${error.message}`)),
+      );
+      window.addEventListener("online", updateNetworkState);
+      window.addEventListener("offline", updateNetworkState);
+      window.addEventListener("beforeunload", () => {
+        if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "leave" }));
+      });
+
+      syncRoleUi();
+      updateNetworkState();
+      loadSaved().catch((error) => setState("Db", `检查失败：${error.message}`, "bad"));
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker
+          .register("./sw.js")
+          .then(() => log("Service Worker 已注册"))
+          .catch((error) => log(`Service Worker 注册失败：${error.message}`));
+      }
+      if (ui.role.value === "receiver" && ui.roomInput.value && ui.signalUrl.value)
+        queueMicrotask(connect);
+    </script>
+  </body>
+</html>
