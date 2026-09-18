@@ -18,7 +18,7 @@ export async function endDB() {
   }
 }
 
-export async function setupDB() {
+export async function setupDB(options: { logging?: boolean } = {}) {
   if (connection) return;
 
   const logger = new Logger("DB");
@@ -29,13 +29,11 @@ export async function setupDB() {
     }
   }
 
-  logger.debug(`Connecting to ${process.env.DATABASE_URL}`);
-  logger.debug(`SECRET: ${process.env.SECRET}`);
-
   connection = await createConnection();
 
   return drizzle(connection, {
     schema: schemas,
-    logger: new DefaultLogger({ writer: new CustomDbLogWriter() }),
+    logger:
+      options.logging === false ? false : new DefaultLogger({ writer: new CustomDbLogWriter() }),
   });
 }
