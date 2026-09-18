@@ -122,6 +122,16 @@ pnpm db:init
 pnpm db:upload
 ```
 
+### 增量导入渐进学习课程
+
+`pnpm db:upload` 仅用于首次初始化。要把 `lexical-chunks` 生成的 Earthworm JSON 增量导入为新课程包，先运行不写数据库的预览：
+
+```bash
+pnpm course:import -- --input <文件.earthworm.json> --pack-title <课程包名> --course-title <课程名> --description <说明>
+```
+
+确认题目数量和首尾内容后，追加 `--apply` 执行事务导入。每次执行都会创建新的免费课程包；`--cover` 默认为 `/logo.png`。
+
 ### 7. 启动后端服务
 
 ```bash

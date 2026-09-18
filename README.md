@@ -122,6 +122,16 @@ pnpm db:init
 pnpm db:upload
 ```
 
+### Incrementally Import a Progressive Course
+
+`pnpm db:upload` is only for initial setup. To import an Earthworm JSON file produced by `lexical-chunks` as a new course pack, preview it without writing to the database first:
+
+```bash
+pnpm course:import -- --input <file.earthworm.json> --pack-title <pack-title> --course-title <course-title> --description <description>
+```
+
+After checking the count and first/last statements, add `--apply` to import everything in one transaction. Each run creates a new free course pack; `--cover` defaults to `/logo.png`.
+
 ### 7. Start the Backend Service
 
 ```bash

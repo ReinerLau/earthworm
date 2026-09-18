@@ -35,6 +35,7 @@ DEFAULT_OUTPUT = Path("outputs/lexical-chunks/text.learning-units.md")
 DEFAULT_RULES = Path(__file__).resolve().parents[1] / "rules" / "progression-rules.json"
 ANALYSIS_SCHEMA_VERSION = 7
 ANNOTATION_SCHEMA_VERSION = 7
+EARTHWORM_SCHEMA_VERSION = 1
 RULE_SCHEMA_VERSION = 5
 SENTENCE_PATTERN = re.compile(
     r".*?[.!?]+(?:[\"'’”’\)\]]+)?(?=\s|$)|.+$",
@@ -136,9 +137,18 @@ def parse_args() -> argparse.Namespace:
         "--output",
         type=Path,
         default=DEFAULT_OUTPUT,
-        help=f"output Markdown path (default: {DEFAULT_OUTPUT})",
+        help=f"output path (default: {DEFAULT_OUTPUT})",
     )
-    return parser.parse_args()
+    parser.add_argument(
+        "--format",
+        choices=("markdown", "earthworm-json"),
+        default="markdown",
+        help="render format for --render-analysis (default: markdown)",
+    )
+    args = parser.parse_args()
+    if args.format != "markdown" and args.render_analysis is None:
+        parser.error("--format earthworm-json requires --render-analysis")
+    return args
 
 
 def split_sentences(text: str) -> list[str]:
@@ -154,6 +164,10 @@ def tokenize(sentence: str) -> list[Token]:
         Token(match.group(0), match.start(), match.end())
         for match in TOKEN_PATTERN.finditer(sentence)
     ]
+
+
+def normalize_practice_text(text: str) -> str:
+    return " ".join(token.text for token in tokenize(text))
 
 
 def ensure_lexicon() -> wn.Wordnet:
@@ -892,9 +906,10 @@ def find_chunks(
     rules: ProgressionRules,
 ) -> list[str]:
     _, units = find_sentence_units(sentence, trie, lemmatize, analyze, rules)
-    chunks = [unit["text"] for unit in units]
-    if not chunks or chunks[-1] != sentence:
-        chunks.append(sentence)
+    chunks = [normalize_practice_text(unit["text"]) for unit in units]
+    complete_sentence = normalize_practice_text(sentence)
+    if not chunks or chunks[-1] != complete_sentence:
+        chunks.append(complete_sentence)
     return chunks
 
 
@@ -949,7 +964,10 @@ def markdown_content_escape(text: str) -> str:
 def render_report(chunks_by_sentence: Iterable[Iterable[str]]) -> str:
     lines = ["| 英文语块 |", "|---|"]
     for chunks in chunks_by_sentence:
-        lines.extend(f"| {markdown_escape(chunk)} |" for chunk in chunks)
+        lines.extend(
+            f"| {markdown_escape(normalize_practice_text(chunk))} |"
+            for chunk in chunks
+        )
     return "\n".join(lines) + "\n"
 
 
@@ -1308,7 +1326,7 @@ def render_contextual_report(
         ):
             lines.append(
                 f"| {step} | {markdown_content_escape(prompt)} | "
-                f"{markdown_content_escape(unit['text'])} |"
+                f"{markdown_content_escape(normalize_practice_text(unit['text']))} |"
             )
         final_step = len(analyzed_sentence["learning_units"]) + 1
         lines.extend(
@@ -1316,12 +1334,48 @@ def render_contextual_report(
                 (
                     f"| {final_step} | "
                     f"{markdown_content_escape(annotated_sentence['sentence_translation'])} | "
-                    f"{markdown_escape(analyzed_sentence['sentence'])} |"
+                    f"{markdown_escape(normalize_practice_text(analyzed_sentence['sentence']))} |"
                 ),
                 "",
             ]
         )
     return "\n".join(lines).rstrip() + "\n"
+
+
+def render_earthworm_json(
+    analysis: Mapping[str, Any], annotations: Mapping[str, Any]
+) -> str:
+    statements: list[dict[str, str]] = []
+    for analyzed_sentence, annotated_sentence in zip(
+        analysis["sentences"], annotations["sentences"], strict=True
+    ):
+        for unit, prompt in zip(
+            analyzed_sentence["learning_units"],
+            annotated_sentence["unit_prompts"],
+            strict=True,
+        ):
+            statements.append(
+                {
+                    "chinese": prompt,
+                    "english": normalize_practice_text(unit["text"]),
+                    "soundmark": "",
+                }
+            )
+        statements.append(
+            {
+                "chinese": annotated_sentence["sentence_translation"],
+                "english": normalize_practice_text(analyzed_sentence["sentence"]),
+                "soundmark": "",
+            }
+        )
+    return json.dumps(
+        {
+            "schema_version": EARTHWORM_SCHEMA_VERSION,
+            "statements": statements,
+        },
+        ensure_ascii=False,
+        indent=2,
+    ) + "\n"
 
 
 def write_output(requested: Path, content: str) -> Path:
@@ -1338,7 +1392,10 @@ def main() -> int:
         try:
             analysis = load_analysis(args.render_analysis)
             annotations = parse_annotations(sys.stdin.read(), analysis)
-            report = render_contextual_report(analysis, annotations)
+            if args.format == "earthworm-json":
+                report = render_earthworm_json(analysis, annotations)
+            else:
+                report = render_contextual_report(analysis, annotations)
         except ConfigurationError as error:
             print(f"lexical-chunks: {error}", file=sys.stderr)
             return 1

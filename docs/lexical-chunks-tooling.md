@@ -14,7 +14,7 @@
 6. 根据原子的依存中心关系识别连续名词前置修饰结构，先从名词中心向左形成自然名词短语。
 7. 对相邻的右侧名词组检查 `pobj → prep → NOUN/PROPN` 依存链，逐步形成 `noise from traffic` 一类简单后置修饰名词短语。
 8. 将已学名词短语视为不可拆的组合组，再从最右侧组开始向左折叠；连接成分由组间原文切片自动带入。
-9. 模型按位置填写中文提示，渲染器校验后追加完整原句。
+9. 模型按位置填写中文提示，渲染器校验后追加完整原句；所有最终英文答案按现有 tokenizer 重新连接 token，去除分隔标点并规范空格。
 
 规则位于 `rules/progression-rules.json`。人工校正面向规则和回归样本，不逐句修改分析结果。
 
@@ -46,7 +46,7 @@ Birdsong
 good
 mental health
 good for our mental health
-Birdsong is good for our mental health.
+Birdsong is good for our mental health
 ```
 
 ## 外部接口
@@ -54,7 +54,8 @@ Birdsong is good for our mental health.
 CLI 有三个模式：
 
 - `--analysis-output <路径>`：从标准输入读取英文，输出 schema 7 分析 JSON。
-- `--render-analysis <路径> --output <路径>`：读取严格对齐的中文提示 JSON，生成 Markdown。
+- `--render-analysis <路径> --format markdown --output <路径>`：读取严格对齐的中文提示 JSON，生成 Markdown；`--format` 省略时行为相同。
+- `--render-analysis <路径> --format earthworm-json --output <路径>`：读取相同提示 JSON，生成可由管理员导入命令消费的结构化题目。
 - 不传分析或渲染参数：生成兼容的英文单列表格，内容与确定性学习单元一致。
 
 默认路径为 `outputs/lexical-chunks/text.learning-units.md`。同名文件存在时生成 `text-2.learning-units.md` 等递增名称。任何校验失败都返回非零状态且不创建报告。
@@ -111,12 +112,7 @@ CLI 有三个模式：
   "schema_version": 7,
   "sentences": [
     {
-      "unit_prompts": [
-        "鸟鸣",
-        "有益的",
-        "心理健康",
-        "对我们的心理健康有益"
-      ],
+      "unit_prompts": ["鸟鸣", "有益的", "心理健康", "对我们的心理健康有益"],
       "sentence_translation": "鸟鸣有益于我们的心理健康。"
     }
   ]
@@ -124,6 +120,25 @@ CLI 有三个模式：
 ```
 
 提示 JSON 不携带英文，只按位置提供中文。句子数和每句提示数必须与分析完全一致；根对象和句子对象都拒绝未知字段。
+
+### Earthworm JSON
+
+```json
+{
+  "schema_version": 1,
+  "statements": [
+    {
+      "chinese": "鸟鸣",
+      "english": "Birdsong",
+      "soundmark": ""
+    }
+  ]
+}
+```
+
+结构化输出使用独立 schema 1。渲染器按原句顺序写入每个渐进学习单元，并在每句最后写入整句中文提示和原句；全部英文答案均使用无分隔标点的练习文本，音标为空。管理员命令严格校验字段、非空提示和答案，再在单个数据库事务中创建课程包、课程和题目。
+
+分析 JSON 仍完整保留原文、标点和字符范围。Markdown、兼容单列表格与 Earthworm JSON 在最终输出时统一提取 tokenizer 已识别的英文和数字 token，并以单个空格连接。这样会移除句号、逗号、问号、感叹号、引号、括号等分隔标点，同时保留 `don't`、`well-being`、`1,500` 和 `3.14` 等 token 内部符号。
 
 ## 确定性规则
 
@@ -150,7 +165,20 @@ Morphy 匹配不使用第 4 条兜底，必须得到词典词性与上下文词�
   "schema_version": 5,
   "content_pos": ["ADJ", "ADV", "NOUN", "NUM", "PROPN", "VERB"],
   "excluded_pos": ["AUX", "CCONJ", "DET", "PART", "PRON", "SCONJ"],
-  "excluded_dependencies": ["agent", "aux", "auxpass", "case", "cc", "cop", "det", "expl", "mark", "neg", "prep", "prt"],
+  "excluded_dependencies": [
+    "agent",
+    "aux",
+    "auxpass",
+    "case",
+    "cc",
+    "cop",
+    "det",
+    "expl",
+    "mark",
+    "neg",
+    "prep",
+    "prt"
+  ],
   "lexical_pos_compatibility": {
     "a": ["ADJ"],
     "n": ["NOUN", "PROPN"],
@@ -160,7 +188,14 @@ Morphy 匹配不使用第 4 条兜底，必须得到词典词性与上下文词�
   },
   "combination_strategy": "nominal_phrase_first_right_fold",
   "nominal_head_pos": ["NOUN", "PROPN"],
-  "nominal_premodifier_dependencies": ["advmod", "amod", "compound", "nummod", "npadvmod", "quantmod"],
+  "nominal_premodifier_dependencies": [
+    "advmod",
+    "amod",
+    "compound",
+    "nummod",
+    "npadvmod",
+    "quantmod"
+  ],
   "nominal_postmodifier_object_dependencies": ["pobj"],
   "nominal_postmodifier_bridge_dependencies": ["prep"],
   "verb_particle_head_pos": ["VERB"],
@@ -211,18 +246,19 @@ flowchart LR
     H --> I
     I --> J[模型生成中文提示]
     J --> K[严格校验与渲染]
-    K --> L[追加完整原句]
+    K --> L[Markdown 报告]
+    K --> M[Earthworm JSON<br/>追加完整原句]
 ```
 
 ## 依赖
 
-| 依赖 | 版本 | 用途 |
-|---|---|---|
-| Wn | `1.1.1` | 读取 WordNet 数据并提供 Morphy |
-| Open English WordNet | `oewn:2025` | 单词和多词表达匹配 |
-| spaCy | `3.8.7` | 固定英语分析 pipeline |
-| en_core_web_sm | `3.8.0` | 上下文词性、依存角色和字符位置 |
-| Click | `8.1.8` | 固定 spaCy 命令依赖的兼容版本 |
+| 依赖                 | 版本        | 用途                           |
+| -------------------- | ----------- | ------------------------------ |
+| Wn                   | `1.1.1`     | 读取 WordNet 数据并提供 Morphy |
+| Open English WordNet | `oewn:2025` | 单词和多词表达匹配             |
+| spaCy                | `3.8.7`     | 固定英语分析 pipeline          |
+| en_core_web_sm       | `3.8.0`     | 上下文词性、依存角色和字符位置 |
+| Click                | `8.1.8`     | 固定 spaCy 命令依赖的兼容版本  |
 
 相同输入、依赖和规则产生相同英文学习单元。模型生成的中文措辞不保证逐字一致。
 
@@ -233,7 +269,7 @@ flowchart LR
 - 中间答案必须是原句中的连续片段；非连续表达不在当前范围。
 - 固定统计模型可能产生稳定但错误的上下文分析；表层 OEWN 证据只能纠正未承担功能角色的部分误标，其余问题通过回归样本调整通用规则。
 - 中文提示用于理解和教材表达复现，不表示目标英文是唯一自然表达。
-- 英文答案始终来自原句字符范围，中文不能反向修改英文结构。
+- 英文答案始终由原句字符范围内的 token 生成，中文不能反向修改英文结构；分析保留原文标点，最终练习答案去除分隔标点。
 
 ## 验证
 

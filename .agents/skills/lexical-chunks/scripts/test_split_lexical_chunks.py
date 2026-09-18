@@ -33,8 +33,10 @@ from split_lexical_chunks import (
     find_lexicon_spans,
     find_sentence_atoms,
     load_rules,
+    normalize_practice_text,
     parse_annotations,
     render_contextual_report,
+    render_earthworm_json,
     render_report,
     select_longest_spans,
     split_sentences,
@@ -264,6 +266,14 @@ class SplitLexicalChunksTests(TestCase):
                 for token in tokenize("1,500 don't damage nature's well-being.")
             ],
             ["1,500", "don't", "damage", "nature's", "well-being"],
+        )
+
+    def test_normalizes_practice_text_without_losing_token_internal_marks(self):
+        self.assertEqual(
+            normalize_practice_text(
+                '"Wait, don’t re-enter (room 3.14) — 1,500 times!"'
+            ),
+            "Wait don’t re-enter room 3.14 1,500 times",
         )
 
     def test_loads_general_evidence_rules_without_word_overrides(self):
@@ -801,7 +811,7 @@ class SplitLexicalChunksTests(TestCase):
     def test_two_cores_progress_directly_to_the_complete_sentence(self):
         self.assertEqual(
             self.chunks("Dogs bark.", ["dog", "bark"]),
-            ["Dogs", "bark", "Dogs bark."],
+            ["Dogs", "bark", "Dogs bark"],
         )
 
     def test_morphy_matches_inflected_oewn_expression(self):
@@ -830,6 +840,18 @@ class SplitLexicalChunksTests(TestCase):
             self.sample_analysis(),
         )
 
+    def test_analysis_retains_original_punctuation_and_ranges(self):
+        analyzed = self.analysis("Dogs bark.", ["dog", "bark"])["sentences"][0]
+
+        self.assertEqual(analyzed["sentence"], "Dogs bark.")
+        self.assertEqual(
+            [
+                (unit["text"], unit["start"], unit["end"])
+                for unit in analyzed["learning_units"]
+            ],
+            [("Dogs", 0, 4), ("bark", 5, 9)],
+        )
+
     def test_build_learning_units_is_deterministic(self):
         analysis = self.sample_analysis()["sentences"][0]
 
@@ -840,14 +862,14 @@ class SplitLexicalChunksTests(TestCase):
 
     def test_renders_compatibility_english_column(self):
         self.assertEqual(
-            render_report([["dogs", "Dogs bark."]]),
-            "| 英文语块 |\n|---|\n| dogs |\n| Dogs bark. |\n",
+            render_report([["dogs,", '"Dogs bark!"']]),
+            "| 英文语块 |\n|---|\n| dogs |\n| Dogs bark |\n",
         )
 
-    def test_escapes_markdown_table_pipes(self):
+    def test_removes_markdown_table_pipes_from_practice_text(self):
         self.assertEqual(
             render_report([["a | b"]]),
-            "| 英文语块 |\n|---|\n| a \\| b |\n",
+            "| 英文语块 |\n|---|\n| a b |\n",
         )
 
     def test_contextual_report_does_not_escape_hyphens(self):
@@ -855,7 +877,7 @@ class SplitLexicalChunksTests(TestCase):
             "sentences": [
                 {
                     "sentence": "Birdsong benefited well-being.",
-                    "learning_units": [{"text": "well-being"}],
+                    "learning_units": [{"text": "well-being,"}],
                 }
             ]
         }
@@ -1040,8 +1062,106 @@ class SplitLexicalChunksTests(TestCase):
             "| 2 | 有益的 | good |\n"
             "| 3 | 心理健康 | mental health |\n"
             "| 4 | 对我们的心理健康有益 | good for our mental health |\n"
-            "| 5 | 鸟鸣有益于我们的心理健康。 | Birdsong is good for our mental health. |\n",
+            "| 5 | 鸟鸣有益于我们的心理健康。 | Birdsong is good for our mental health |\n",
         )
+
+    def test_renders_earthworm_json_in_training_order(self):
+        analysis = self.sample_analysis()
+        analysis["sentences"][0]["learning_units"][0]["text"] = '"Dogs,"'
+        annotations = self.sample_annotations()
+
+        payload = json.loads(render_earthworm_json(analysis, annotations))
+
+        self.assertEqual(
+            payload,
+            {
+                "schema_version": 1,
+                "statements": [
+                    {"chinese": "狗", "english": "Dogs", "soundmark": ""},
+                    {"chinese": "吠叫", "english": "bark", "soundmark": ""},
+                    {
+                        "chinese": "狗会吠叫。",
+                        "english": "Dogs bark",
+                        "soundmark": "",
+                    },
+                ],
+            },
+        )
+
+    def test_renders_245_items_and_appends_each_complete_sentence(self):
+        analysis = {
+            "sentences": [
+                {
+                    "sentence": f"Complete sentence {sentence_index + 1}.",
+                    "learning_units": [
+                        {"text": f"unit-{sentence_index + 1}-{unit_index + 1}"}
+                        for unit_index in range(16 if sentence_index < 5 else 15)
+                    ],
+                }
+                for sentence_index in range(15)
+            ]
+        }
+        annotations = {
+            "sentences": [
+                {
+                    "unit_prompts": [
+                        f"提示-{sentence_index + 1}-{unit_index + 1}"
+                        for unit_index in range(16 if sentence_index < 5 else 15)
+                    ],
+                    "sentence_translation": f"完整句子 {sentence_index + 1}。",
+                }
+                for sentence_index in range(15)
+            ]
+        }
+
+        statements = json.loads(render_earthworm_json(analysis, annotations))["statements"]
+
+        self.assertEqual(len(statements), 245)
+        self.assertEqual(statements[0]["english"], "unit 1 1")
+        self.assertEqual(statements[-1]["english"], "Complete sentence 15")
+        offset = 0
+        for sentence_index in range(15):
+            unit_count = 16 if sentence_index < 5 else 15
+            self.assertEqual(
+                statements[offset + unit_count],
+                {
+                    "chinese": f"完整句子 {sentence_index + 1}。",
+                    "english": f"Complete sentence {sentence_index + 1}",
+                    "soundmark": "",
+                },
+            )
+            offset += unit_count + 1
+
+    def test_earthworm_json_validation_failure_does_not_create_output(self):
+        with TemporaryDirectory() as directory:
+            analysis_path = Path(directory) / "analysis.json"
+            output_path = Path(directory) / "statements.earthworm.json"
+            analysis_path.write_text(
+                json.dumps(self.sample_analysis()), encoding="utf-8"
+            )
+            stderr = StringIO()
+            with (
+                patch.object(
+                    sys,
+                    "argv",
+                    [
+                        "split_lexical_chunks.py",
+                        "--render-analysis",
+                        str(analysis_path),
+                        "--format",
+                        "earthworm-json",
+                        "--output",
+                        str(output_path),
+                    ],
+                ),
+                patch.object(sys, "stdin", StringIO("{")),
+                redirect_stderr(stderr),
+            ):
+                status = cli_main()
+
+            self.assertEqual(status, 1)
+            self.assertIn("not valid JSON", stderr.getvalue())
+            self.assertFalse(output_path.exists())
 
     def test_render_validation_failure_does_not_create_report(self):
         with TemporaryDirectory() as directory:
