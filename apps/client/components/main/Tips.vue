@@ -9,7 +9,6 @@
 import { onMounted, onUnmounted } from "vue";
 
 import { useAnswerTip } from "~/composables/main/answerTip";
-import { useCurrentStatementEnglishSound } from "~/composables/main/englishSound";
 import { useGameMode } from "~/composables/main/game";
 import { useSummary } from "~/composables/main/summary";
 import { useShortcutKeyMode } from "~/composables/user/shortcutKey";
@@ -17,27 +16,9 @@ import { useCourseStore } from "~/store/course";
 import { cancelShortcut, registerShortcut } from "~/utils/keyboardShortcuts";
 
 const { shortcutKeys } = useShortcutKeyMode();
-usePlaySound(shortcutKeys.value.sound);
 useShowAnswer(shortcutKeys.value.answer);
 
 useQuestionNavigation();
-
-function usePlaySound(key: string) {
-  const { playSound } = useCurrentStatementEnglishSound();
-
-  onMounted(() => {
-    registerShortcut(key, playSoundCommand);
-  });
-
-  onUnmounted(() => {
-    cancelShortcut(key, playSoundCommand);
-  });
-
-  function playSoundCommand(e: KeyboardEvent) {
-    e.preventDefault();
-    playSound();
-  }
-}
 
 function useQuestionNavigation() {
   const courseStore = useCourseStore();

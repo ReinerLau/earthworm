@@ -93,7 +93,7 @@
           <h3 class="py-2 text-base font-semibold">用户设置页面</h3>
           <p class="py-1 leading-7">
             右上角图标进入 User Info
-            切换到设置页面，自定义你喜欢的快捷键，也可以控制语音是否自动播放、单词下划线固定长度、使用空格提交等等……更多个人设置会持续更新
+            切换到设置页面，可以自定义快捷键、单词下划线固定长度、使用空格提交等等……更多个人设置会持续更新
             😊
             <i
               class="mx-2 inline h-8 w-1 animate-wink bg-slate-900 p-[2px] text-sm dark:bg-white"

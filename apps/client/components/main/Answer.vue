@@ -4,14 +4,9 @@
       <span
         v-for="word in words"
         :key="word"
-        class="cursor-pointer p-1 hover:text-fuchsia-500"
-        @click="handlePlayWordSound(word)"
+        class="p-1"
         >{{ word }}</span
       >
-      <span
-        class="i-ph-speaker-simple-high ml-1 inline-block h-7 w-7 cursor-pointer text-gray-500 hover:text-fuchsia-500"
-        @click="handlePlayEnglishSound"
-      ></span>
     </div>
     <div class="my-6 text-xl text-gray-500">
       {{ courseStore.currentStatement?.soundmark }}
@@ -37,42 +32,18 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted } from "vue";
 
-import { useCurrentStatementEnglishSound } from "~/composables/main/englishSound";
-import { usePlayWordSound } from "~/composables/main/englishSound/audio";
 import { useGameMode } from "~/composables/main/game";
 import { useSummary } from "~/composables/main/summary";
-import { useAutoPronunciation } from "~/composables/user/sound";
 import { useCourseStore } from "~/store/course";
 import { cancelShortcut, registerShortcut } from "~/utils/keyboardShortcuts";
 
 const courseStore = useCourseStore();
-const { handlePlayWordSound } = usePlayWordSound();
-const { handlePlayEnglishSound } = usePlayEnglishSound();
 const { showSummary } = useSummary();
 const { showQuestion } = useGameMode();
-const { isAutoPlaySound } = useAutoPronunciation();
 
 const words = computed(() => courseStore.currentStatement?.english.split(" "));
 
 registerShortcutKeyForNextQuestion();
-
-function usePlayEnglishSound() {
-  const { playSound } = useCurrentStatementEnglishSound();
-
-  onMounted(() => {
-    if (isAutoPlaySound()) {
-      playSound();
-    }
-  });
-
-  function handlePlayEnglishSound() {
-    playSound();
-  }
-
-  return {
-    handlePlayEnglishSound,
-  };
-}
 
 function registerShortcutKeyForNextQuestion() {
   function handleKeydown(e: KeyboardEvent) {

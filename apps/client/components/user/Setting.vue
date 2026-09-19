@@ -78,45 +78,6 @@
               />
             </td>
           </tr>
-          <tr class="hover">
-            <td class="label-text">答案页面自动播放声音</td>
-            <td class="w-[300px] text-center">
-              <input
-                type="checkbox"
-                class="toggle toggle-secondary"
-                :checked="autoPlaySound"
-                @change="toggleAutoPlaySound"
-              />
-            </td>
-          </tr>
-          <tr class="hover">
-            <td class="label-text">答题时自动播放声音</td>
-            <td class="w-[300px] text-center">
-              <input
-                type="checkbox"
-                class="toggle toggle-secondary"
-                :checked="autoPlayEnglish"
-                @change="toggleAutoPlayEnglish"
-              />
-            </td>
-          </tr>
-          <tr class="hover">
-            <td class="label-text">切换口音</td>
-            <td class="w-[300px] text-center">
-              <div class="join mr-12">
-                <input
-                  v-for="lang in getPronunciationOptions()"
-                  class="btn join-item btn-sm"
-                  type="radio"
-                  name="options"
-                  :value="lang.value"
-                  :aria-label="lang.label"
-                  :checked="pronunciation === lang.value"
-                  @change="togglePronunciation(lang.value as PronunciationType)"
-                />
-              </div>
-            </td>
-          </tr>
         </tbody>
       </table>
     </section>
@@ -226,13 +187,8 @@ import Message from "~/components/main/Message/useMessage";
 import { useAutoNextQuestion } from "~/composables/user/autoNext";
 import { useErrorTip } from "~/composables/user/errorTip";
 import { GameMode, useGameMode } from "~/composables/user/gameMode";
-import { PronunciationType, usePronunciation } from "~/composables/user/pronunciation";
 import { SHORTCUT_KEY_TYPES, useShortcutKeyMode } from "~/composables/user/shortcutKey";
-import {
-  useAutoPlayEnglish,
-  useAutoPronunciation,
-  useKeyboardSound,
-} from "~/composables/user/sound";
+import { useKeyboardSound } from "~/composables/user/sound";
 import { useSpaceSubmitAnswer } from "~/composables/user/submitKey";
 import { useShowWordsWidth } from "~/composables/user/words";
 import { parseShortcutKeys } from "~/utils/keyboardShortcuts";
@@ -254,14 +210,6 @@ const dialogBoxRef = ref<HTMLElement | null>(null);
 // };
 const { autoNextQuestion, toggleAutoQuestion } = useAutoNextQuestion();
 const { keyboardSound, toggleKeyboardSound } = useKeyboardSound();
-const { autoPlaySound, toggleAutoPlaySound } = useAutoPronunciation();
-const { autoPlayEnglish, toggleAutoPlayEnglish } = useAutoPlayEnglish();
-const {
-  pronunciation,
-  // 发音配置列表
-  getPronunciationOptions,
-  togglePronunciation,
-} = usePronunciation();
 const { showWordsWidth, toggleAutoWordsWidth } = useShowWordsWidth();
 const { useSpace, toggleUseSpaceSubmitAnswer } = useSpaceSubmitAnswer();
 const { showErrorTip, toggleShowErrorTip } = useErrorTip();
@@ -280,20 +228,8 @@ const { getGameModeOptions, currentGameMode, toggleGameMode } = useGameMode();
 
 const shortcutKeyBindList = [
   {
-    label: "播放发音",
-    type: SHORTCUT_KEY_TYPES.SOUND,
-  },
-  {
     label: "显示隐藏/答案预览",
     type: SHORTCUT_KEY_TYPES.ANSWER,
-  },
-  {
-    label: "返回上个问题",
-    type: SHORTCUT_KEY_TYPES.PREVIOUS,
-  },
-  {
-    label: "跳过当前问题",
-    type: SHORTCUT_KEY_TYPES.SKIP,
   },
 ];
 
