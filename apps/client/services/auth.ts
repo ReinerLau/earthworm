@@ -1,27 +1,30 @@
 import { useLogto } from "@logto/vue";
 import { useRuntimeConfig } from "nuxt/app";
 
-let logto: ReturnType<typeof useLogto>;
+let logto: ReturnType<typeof useLogto> | undefined;
 let runtimeConfig: ReturnType<typeof useRuntimeConfig>;
 export async function setupAuth() {
-  logto = useLogto();
   runtimeConfig = useRuntimeConfig();
+  if (runtimeConfig.public.offlineMode) return;
+  logto = useLogto();
 }
 
 export async function signIn(callback?: string) {
+  if (!logto) return;
   callback && setSignInCallback(callback);
   logto.signIn(runtimeConfig.public.signInRedirectURI);
 }
 
 export function signOut() {
-  return logto.signOut(runtimeConfig.public.signOutRedirectURI);
+  return logto?.signOut(runtimeConfig.public.signOutRedirectURI);
 }
 
 export function isAuthenticated() {
-  return logto.isAuthenticated.value;
+  return logto?.isAuthenticated.value ?? false;
 }
 
 export async function getToken() {
+  if (!logto) return undefined;
   const accessToken = await logto.getAccessToken(runtimeConfig.public.backendEndpoint);
 
   return accessToken;

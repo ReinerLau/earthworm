@@ -5,7 +5,11 @@
     <!-- 左侧 -->
     <div class="flex items-center">
       <NuxtLink
-        :href="`/course-pack/${courseStore.currentCourse?.coursePackId}`"
+        :href="
+          courseStore.isOffline
+            ? '/offline/'
+            : `/course-pack/${courseStore.currentCourse?.coursePackId}`
+        "
         class="clickable-item tooltip-item"
         data-tip="课程列表"
       >
@@ -19,14 +23,20 @@
         {{ currentCourseInfo }}
       </div>
       <MainStudyVideoLink
+        v-if="!courseStore.isOffline"
         class="icon-item ml-1"
         :course-order="courseStore.currentCourse?.order"
+      />
+      <OfflineSendCourseButton
+        v-if="!courseStore.isOffline"
+        class="ml-3"
       />
     </div>
 
     <!-- 右侧 -->
     <div class="flex items-center">
       <div
+        v-if="!courseStore.isOffline"
         class="tooltip-item mr-4"
         data-tip="重置当前课程进度"
         @click="handleDoAgain"
@@ -34,6 +44,7 @@
         <span class="clickable-item icon-item i-ph-arrow-counter-clockwise"></span>
       </div>
       <div
+        v-if="!courseStore.isOffline"
         class="tooltip-item mr-1"
         data-tip="排行榜"
         @click="rankingStore.showRankModal"
@@ -49,7 +60,7 @@
     class="h-6 p-[2px]"
     :percentage="currentPercentage"
   />
-  <RankRankingList />
+  <RankRankingList v-if="!courseStore.isOffline" />
   <MainMessageBox
     class="mt-[-4vh]"
     v-model:isShowModal="showTipModal"

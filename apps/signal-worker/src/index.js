@@ -1,6 +1,6 @@
-import { DurableObject } from "cloudflare:workers";
-
-const ROOM_LIFETIME_MS = 5 * 60 * 1000;
+const ROOM_LIFETIME_MS = 10 * 60 * 1000;
+const MAX_SIGNAL_BYTES = 64 * 1024;
+const ROOM_TOKEN_PATTERN = /^[a-f0-9]{32}$/;
 const ALLOWED_MESSAGE_TYPES = new Set(["offer", "answer", "candidate", "leave"]);
 
 export default {
@@ -8,15 +8,15 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname === "/health") {
-      return Response.json({ ok: true, prototype: true });
+      return Response.json({ ok: true, service: "earthworm-course-transfer" });
     }
 
-    const match = url.pathname.match(/^\/signal\/([a-z0-9]{8})$/);
-    if (!match) {
+    const match = url.pathname.match(/^\/signal\/([a-f0-9]{32})$/);
+    if (!match || !ROOM_TOKEN_PATTERN.test(match[1])) {
       return new Response("Not found", { status: 404 });
     }
 
-    if (request.headers.get("Upgrade") !== "websocket") {
+    if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
       return new Response("Expected WebSocket upgrade", { status: 426 });
     }
 
@@ -30,10 +30,13 @@ export default {
   },
 };
 
-export class SignalRoom extends DurableObject {
+export class SignalRoom {
+  constructor(state) {
+    this.ctx = state;
+  }
+
   async fetch(request) {
-    const url = new URL(request.url);
-    const role = url.searchParams.get("role");
+    const role = new URL(request.url).searchParams.get("role");
     const sockets = this.ctx.getWebSockets();
     const roles = sockets.map((socket) => socket.deserializeAttachment()?.role);
 
@@ -58,7 +61,10 @@ export class SignalRoom extends DurableObject {
   }
 
   webSocketMessage(sender, message) {
-    if (typeof message !== "string" || message.length > 64 * 1024) {
+    if (
+      typeof message !== "string" ||
+      new TextEncoder().encode(message).byteLength > MAX_SIGNAL_BYTES
+    ) {
       sender.close(1009, "Unsupported message");
       return;
     }
@@ -71,7 +77,7 @@ export class SignalRoom extends DurableObject {
       return;
     }
 
-    if (!ALLOWED_MESSAGE_TYPES.has(parsed.type)) {
+    if (!parsed || !ALLOWED_MESSAGE_TYPES.has(parsed.type)) {
       sender.close(1008, "Unsupported signal type");
       return;
     }
@@ -83,15 +89,13 @@ export class SignalRoom extends DurableObject {
 
   webSocketClose(socket, code, reason) {
     for (const peer of this.ctx.getWebSockets()) {
-      if (peer !== socket) {
-        peer.send(JSON.stringify({ type: "leave", code, reason }));
-      }
+      if (peer !== socket) peer.send(JSON.stringify({ type: "leave", code, reason }));
     }
   }
 
   async alarm() {
     for (const socket of this.ctx.getWebSockets()) {
-      socket.close(4000, "Prototype room expired");
+      socket.close(4000, "Room expired");
     }
     await this.ctx.storage.deleteAlarm();
   }

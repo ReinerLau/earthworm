@@ -1,5 +1,6 @@
 import { useDevice, useIsLandscape } from "#imports";
 import { ref, watchEffect } from "vue";
+import { useRoute } from "vue-router";
 
 export enum GameMode {
   Question = "question",
@@ -40,8 +41,14 @@ const isMessageShow = ref(false);
 export function useDeviceTip() {
   const { isMobile, isIpad } = useDevice();
   const { isLandscape } = useIsLandscape();
+  const route = useRoute();
+  const isOfflineRoute = route.path.startsWith("/offline") || route.query.offline === "1";
 
   watchEffect(() => {
+    if (isOfflineRoute) {
+      isMessageShow.value = false;
+      return;
+    }
     isMessageShow.value = (isIpad.value && !isLandscape.value) || isMobile.value;
 
     if (isMobile.value) {

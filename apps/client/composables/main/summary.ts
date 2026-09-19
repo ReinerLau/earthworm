@@ -28,8 +28,9 @@ const hasLoadingDailySentence = ref(false);
 
 export const resetSentenceLoading = () => (hasLoadingDailySentence.value = false);
 
-export function useDailySentence() {
+export function useDailySentence(isOffline = false) {
   const getDailySentence = async () => {
+    if (isOffline) return;
     if (!hasLoadingDailySentence.value) {
       hasLoadingDailySentence.value = true;
       const { en, zh } = await fetchDailySentence().catch((err) => {
@@ -42,7 +43,7 @@ export function useDailySentence() {
   };
 
   onMounted(() => {
-    getDailySentence();
+    if (!isOffline) getDailySentence();
   });
 
   return {

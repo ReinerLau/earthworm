@@ -8,6 +8,7 @@
         <div class="relative">
           <h3 className="font-bold text-lg mb-4">🎉 Congratulations!</h3>
           <button
+            v-if="!courseStore.isOffline"
             tabindex="0"
             class="btn btn-ghost btn-sm absolute right-0 top-0 mx-1 h-7 w-7 rounded-md p-0"
             @click="soundSentence"
@@ -17,7 +18,10 @@
         </div>
 
         <div class="flex flex-col">
-          <div class="flex">
+          <div
+            v-if="!courseStore.isOffline"
+            class="flex"
+          >
             <span class="text-6xl font-bold">"</span>
             <div class="flex-1 text-center text-xl leading-loose">
               {{ enSentence }}
@@ -25,14 +29,22 @@
             <span class="invisible text-6xl font-bold">"</span>
           </div>
 
-          <div class="flex">
+          <div
+            v-if="!courseStore.isOffline"
+            class="flex"
+          >
             <span class="invisible text-6xl font-bold">"</span>
             <div class="flex-1 text-center text-xl leading-loose">
               {{ zhSentence }}
             </div>
             <span class="text-6xl font-bold">"</span>
           </div>
-          <p class="text-3 text-right text-gray-200">—— 金山词霸「每日一句」</p>
+          <p
+            v-if="!courseStore.isOffline"
+            class="text-3 text-right text-gray-200"
+          >
+            —— 金山词霸「每日一句」
+          </p>
           <p class="pl-14 text-base leading-loose text-gray-600">
             {{
               `恭喜您一共完成 ${courseTimer.totalRecordNumber()} 道题，用时 ${formatSecondsToTime(
@@ -43,6 +55,7 @@
         </div>
         <div className="modal-action">
           <button
+            v-if="!courseStore.isOffline"
             class="btn btn-primary"
             @click="toShare"
           >
@@ -97,7 +110,7 @@ const coursePackStore = useCoursePackStore();
 const { goToNextCourse, completeCourse, haveNextCourse } = useCourse();
 const { handleDoAgain } = useDoAgain();
 const { showModal, hideSummary } = useSummary();
-const { zhSentence, enSentence } = useDailySentence();
+const { zhSentence, enSentence } = useDailySentence(courseStore.isOffline);
 const { confettiCanvasRef, playConfetti } = useConfetti();
 const { showShareModal } = useShareModal();
 const { updateActiveCourseMap } = useActiveCourseMap();
@@ -114,7 +127,7 @@ watch(showModal, (val) => {
     // 显示结算面板代表当前课程已经完成
     completeCourse();
     // 朗读每日一句
-    soundSentence();
+    if (!courseStore.isOffline) soundSentence();
     // 延迟一小会放彩蛋
     setTimeout(async () => {
       playConfetti();
@@ -160,6 +173,10 @@ function useCourse() {
 
     // 无论后续如何处理，都需要先隐藏 Summary 页面
     hideSummary();
+    if (courseStore.isOffline) {
+      navigateTo("/offline/");
+      return;
+    }
     if (!isAuthenticated()) {
       // 去注册
       showAuthRequireModal();
@@ -174,11 +191,13 @@ function useCourse() {
   }
 
   async function completeCourse() {
-    if (isAuthenticated() && courseStore.currentCourse) {
+    if ((courseStore.isOffline || isAuthenticated()) && courseStore.currentCourse) {
       const { coursePackId } = courseStore.currentCourse;
       const { nextCourse } = await courseStore.completeCourse();
-      coursePackStore.updateCoursesCompleteCount(coursePackId);
-      updateLearnRecord();
+      if (!courseStore.isOffline) {
+        coursePackStore.updateCoursesCompleteCount(coursePackId);
+        updateLearnRecord();
+      }
 
       if (nextCourse) {
         nextCourseId.value = nextCourse.id;

@@ -8,6 +8,7 @@
 
 <script setup lang="ts">
 import { useLogto } from "@logto/vue";
+import { useRuntimeConfig } from "nuxt/app";
 import { onMounted } from "vue";
 
 import { useDarkMode } from "~/composables/darkMode";
@@ -17,6 +18,8 @@ import { useUserStore } from "./store/user";
 const { initDarkMode } = useDarkMode();
 
 async function setup() {
+  const runtimeConfig = useRuntimeConfig();
+  if (runtimeConfig.public.offlineMode) return;
   const userStore = useUserStore();
   const logto = useLogto();
 

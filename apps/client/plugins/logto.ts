@@ -8,6 +8,11 @@ import { setupAuth } from "~/services/auth";
 export default defineNuxtPlugin((nuxtApp) => {
   const runtimeConfig = useRuntimeConfig();
 
+  if (runtimeConfig.public.offlineMode) {
+    setupAuth();
+    return;
+  }
+
   const config: LogtoConfig = {
     endpoint: runtimeConfig.public.endpoint,
     appId: runtimeConfig.public.appId,
