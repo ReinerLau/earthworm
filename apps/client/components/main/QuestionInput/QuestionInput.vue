@@ -1,14 +1,17 @@
 <template>
-  <div class="text-center">
-    <div class="relative flex flex-wrap justify-center gap-2 transition-all">
+  <div class="question-input-shell text-center">
+    <div
+      class="question-input-words relative flex w-full min-w-0 max-w-full flex-wrap justify-center gap-2 transition-all"
+      :style="questionInputStyle"
+    >
       <template
         v-for="(w, i) in courseStore.words"
         :key="i"
       >
         <div
-          class="h-[4rem] rounded-[2px] border-b-2 border-solid text-[3em] leading-none transition-all"
+          class="question-input-word min-h-[4rem] min-w-0 max-w-full rounded-[2px] border-b-2 border-solid leading-none transition-all"
           :class="getWordsClassNames(i)"
-          :style="{ minWidth: `${inputWidth(w)}ch` }"
+          :style="{ width: `${inputWidth(w)}ch` }"
         >
           {{ userInputWords[i]["userInput"] }}
         </div>
@@ -32,7 +35,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 
 import { courseTimer } from "~/composables/courses/courseTimer";
 import { useAnswerTip } from "~/composables/main/answerTip";
@@ -45,10 +48,11 @@ import { useKeyboardSound } from "~/composables/user/sound";
 import { useSpaceSubmitAnswer } from "~/composables/user/submitKey";
 import { useShowWordsWidth } from "~/composables/user/words";
 import { useCourseStore } from "~/store/course";
-import { getWordWidth, useQuestionInput } from "./questionInputHelper";
+import { getQuestionInputStyle, getWordWidth, useQuestionInput } from "./questionInputHelper";
 import { usePlayTipSound, useTypingSound } from "./useTypingSound";
 
 const courseStore = useCourseStore();
+const questionInputStyle = computed(() => getQuestionInputStyle(courseStore.words));
 const { inputEl, focusing, focusInput, blurInput, setInputCursorPosition, getInputCursorPosition } =
   useQuestionInput();
 
@@ -223,3 +227,29 @@ function preventCursorMove(event: MouseEvent) {
   focusInput();
 }
 </script>
+
+<style scoped>
+.question-input-shell {
+  container-type: inline-size;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  max-height: min(60vh, 32rem);
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-inline: 1rem;
+}
+
+.question-input-words {
+  font-size: var(--question-max-font-size);
+  font-size: clamp(
+    var(--question-min-font-size),
+    var(--question-fluid-font-size),
+    var(--question-max-font-size)
+  );
+}
+
+.question-input-word {
+  overflow-wrap: anywhere;
+}
+</style>

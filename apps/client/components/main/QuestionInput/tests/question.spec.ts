@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { getWordWidth } from "../questionInputHelper";
+import {
+  getQuestionInputStyle,
+  getQuestionTextWidth,
+  getWordWidth,
+  QUESTION_INPUT_MIN_FONT_SIZE_REM,
+} from "../questionInputHelper";
 
 describe("getWordWidth", () => {
   it("should return the correct width for a single letter", () => {
@@ -27,5 +32,40 @@ describe("getWordWidth", () => {
     const longString =
       "This is a long string with various characters, including letters, numbers, and symbols! 1234567890";
     expect(getWordWidth(longString)).toBe(91.3);
+  });
+});
+
+describe("question input layout", () => {
+  it("includes the spaces between words when estimating the sentence width", () => {
+    expect(getQuestionTextWidth(["short", "sentence"])).toBeCloseTo(15);
+  });
+
+  it("reduces the fluid font size for longer sentences while keeping one minimum", () => {
+    const shortSentenceStyle = getQuestionInputStyle(["short"]);
+    const longSentenceStyle = getQuestionInputStyle([
+      "This",
+      "is",
+      "a",
+      "sentence",
+      "that",
+      "needs",
+      "more",
+      "room",
+    ]);
+
+    const shortFluidSize = Number(
+      shortSentenceStyle["--question-fluid-font-size"].replace("cqw", ""),
+    );
+    const longFluidSize = Number(
+      longSentenceStyle["--question-fluid-font-size"].replace("cqw", ""),
+    );
+
+    expect(shortFluidSize).toBeGreaterThan(longFluidSize);
+    expect(shortSentenceStyle["--question-min-font-size"]).toBe(
+      `${QUESTION_INPUT_MIN_FONT_SIZE_REM}rem`,
+    );
+    expect(longSentenceStyle["--question-min-font-size"]).toBe(
+      `${QUESTION_INPUT_MIN_FONT_SIZE_REM}rem`,
+    );
   });
 });

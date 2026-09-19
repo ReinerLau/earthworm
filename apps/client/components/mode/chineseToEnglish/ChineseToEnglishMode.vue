@@ -1,5 +1,5 @@
 <template>
-  <div class="flex h-full items-center justify-center">
+  <div class="flex h-full w-full min-w-0 items-center justify-center">
     <template v-if="isQuestion()">
       <ModeChineseToEnglishQuestion />
       <template v-if="isAnswerTip()">
