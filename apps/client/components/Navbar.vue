@@ -3,7 +3,7 @@
     :class="isStickyNavBar"
     class="top-0 z-20 w-full bg-opacity-50 font-customFont backdrop-blur-xl"
   >
-    <div class="mx-auto max-w-screen-xl px-6">
+    <div class="w-full px-6">
       <div class="flex h-16 items-center justify-between">
         <div class="flex flex-1 items-center justify-between">
           <NuxtLink to="/">
