@@ -58,6 +58,7 @@ jobs:
           NUXT_ROUTER_HASH_MODE: "true"
           SIGNAL_BASE_URL: ${{ vars.SIGNAL_BASE_URL }}
           PWA_PUBLIC_URL: ${{ vars.PWA_PUBLIC_URL || 'https://reinerlau.github.io/earthworm' }}
+          APP_VERSION: ${{ github.sha }}
         run: |
           test -n "$SIGNAL_BASE_URL"
           pnpm course-package:build

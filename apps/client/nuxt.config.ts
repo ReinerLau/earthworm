@@ -54,6 +54,7 @@ export default defineNuxtConfig({
       signalBaseUrl: process.env.SIGNAL_BASE_URL || "",
       pwaUrl: process.env.PWA_PUBLIC_URL || "",
       offlineMode: process.env.OFFLINE_PWA === "true",
+      buildVersion: process.env.APP_VERSION || process.env.GITHUB_SHA || "dev",
     },
   },
   pwa: {
