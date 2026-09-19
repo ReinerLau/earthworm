@@ -13,6 +13,7 @@
 </template>
 
 <script setup lang="ts">
+import { definePageMeta } from "#imports";
 import { onMounted, ref } from "vue";
 import { useRoute } from "vue-router";
 

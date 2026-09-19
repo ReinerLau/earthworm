@@ -30,6 +30,7 @@
 
 <script setup lang="ts">
 import { navigateTo } from "#app";
+import { definePageMeta } from "#imports";
 import { onMounted, onUnmounted, ref } from "vue";
 import { useRoute } from "vue-router";
 
