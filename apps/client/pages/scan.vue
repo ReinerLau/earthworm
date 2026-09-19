@@ -68,19 +68,36 @@ let completed = false;
 onMounted(async () => {
   await nextTick();
   try {
-    controls = await reader.decodeFromVideoDevice(undefined, video.value!, (result) => {
-      if (!result || completed) return;
-      const payload = parseTransferQr(result.getText(), window.location.origin);
-      if (!payload) {
-        hasError.value = true;
-        message.value = "这不是有效的 Earthworm 传输二维码";
-        return;
-      }
+    controls = await reader.decodeFromConstraints(
+      {
+        audio: false,
+        video: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1280 },
+          height: { ideal: 1280 },
+        },
+      },
+      video.value!,
+      (result) => {
+        if (!result || completed) return;
+        const payload = parseTransferQr(result.getText(), window.location.origin);
+        if (!payload) {
+          hasError.value = true;
+          message.value = "这不是有效的 Earthworm 传输二维码";
+          return;
+        }
 
-      completed = true;
-      controls?.stop();
-      void navigateTo({ path: "/receive", query: payload });
-    });
+        completed = true;
+        controls?.stop();
+        void navigateTo({
+          path: "/receive",
+          query: {
+            signal: payload.signalUrl,
+            room: payload.roomToken,
+          },
+        });
+      },
+    );
     message.value = "请扫描电脑上的课程二维码";
   } catch (error) {
     hasError.value = true;
