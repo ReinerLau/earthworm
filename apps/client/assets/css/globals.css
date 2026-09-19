@@ -10,6 +10,13 @@
 html,
 body {
   height: 100%;
+  width: 100%;
+  min-width: 0;
+}
+
+#__nuxt {
+  width: 100%;
+  min-width: 0;
 }
 
 :root {
