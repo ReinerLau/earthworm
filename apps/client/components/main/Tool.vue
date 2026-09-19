@@ -7,7 +7,7 @@
       <NuxtLink
         :href="
           courseStore.isOffline
-            ? '/offline/'
+            ? '/course-pack'
             : `/course-pack/${courseStore.currentCourse?.coursePackId}`
         "
         class="clickable-item tooltip-item"
@@ -28,7 +28,7 @@
         :course-order="courseStore.currentCourse?.order"
       />
       <OfflineSendCourseButton
-        v-if="!courseStore.isOffline"
+        v-if="courseStore.isOffline"
         class="ml-3"
       />
     </div>

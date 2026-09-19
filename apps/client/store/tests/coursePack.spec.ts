@@ -1,14 +1,10 @@
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { Course } from "../course";
-import type { CoursePackResponse } from "~/api/coursePack";
-import { fetchCourseHistory } from "~/api/courseHistory";
-import { fetchCoursePack } from "~/api/coursePack";
+import { getCoursePack, listCoursePacks } from "~/services/courseRepository";
 import { useCoursePackStore } from "../coursePack";
 
-vi.mock("~/api/coursePack");
-vi.mock("~/api/courseHistory");
+vi.mock("~/services/courseRepository");
 
 describe("course pack store", () => {
   beforeEach(() => {
@@ -16,62 +12,42 @@ describe("course pack store", () => {
   });
 
   it("should ", async () => {
-    const coursePack: CoursePackResponse = {
-      id: "coursePackId",
-      title: "课程包1",
-      description: "这是一个课程包",
-      isFree: true,
-      courses: [],
-    };
-
-    const firstCourse: Course = {
-      id: "1",
+    const firstCourse = {
+      id: "course-1",
       title: "第一课",
       order: 1,
-      coursePackId: coursePack.id,
+      coursePackId: "pack-1",
       completionCount: 0,
       statementIndex: 0,
-      statements: [
-        { id: "1", order: 1, english: "I", chinese: "我", soundmark: "/aɪ/" },
-        { id: "2", order: 2, english: "like", chinese: "喜欢", soundmark: "/laɪk/" },
-      ],
+      statements: [{ id: "statement-1", order: 1, english: "I", chinese: "我", soundmark: "" }],
     };
 
-    const secondCourse: Course = {
-      id: "2",
+    const secondCourse = {
+      ...firstCourse,
+      id: "course-2",
       title: "第二课",
-      order: 2,
-      coursePackId: coursePack.id,
-      completionCount: 0,
-      statementIndex: 0,
-      statements: [
-        { id: "1", order: 1, english: "I", chinese: "我", soundmark: "/aɪ/" },
-        { id: "2", order: 2, english: "like", chinese: "喜欢", soundmark: "/laɪk/" },
-      ],
     };
 
-    coursePack.courses = [firstCourse, secondCourse];
-
-    vi.mocked(fetchCoursePack).mockImplementation(async () => coursePack);
-
-    vi.mocked(fetchCourseHistory).mockImplementation(async () => {
-      return [
-        {
-          id: 1,
-          completionCount: 5,
-          courseId: firstCourse.id,
-          coursePackId: coursePack.id,
-        },
-      ];
-    });
+    const coursePack = {
+      format: "earthworm-course-pack" as const,
+      version: 1 as const,
+      id: "pack-1",
+      title: "课程包1",
+      description: "这是一个课程包",
+      packageHash: "a".repeat(64),
+      importedAt: "2026-01-01T00:00:00.000Z",
+      courses: [firstCourse, secondCourse],
+    };
+    vi.mocked(listCoursePacks).mockResolvedValue([coursePack]);
+    vi.mocked(getCoursePack).mockResolvedValue(coursePack);
 
     const coursePackStore = useCoursePackStore();
 
+    await coursePackStore.setupCoursePacks();
     await coursePackStore.setupCoursePack(coursePack.id);
 
-    await coursePackStore.updateCoursesCompleteCount(coursePack.id);
-
-    expect(coursePackStore.currentCoursePack?.courses[0].completionCount).toBe(5);
+    expect(coursePackStore.coursePacks).toHaveLength(1);
+    expect(coursePackStore.currentCoursePack?.courses[0].completionCount).toBe(0);
     expect(coursePackStore.currentCoursePack?.courses[1].completionCount).toBe(0);
   });
 });

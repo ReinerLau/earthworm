@@ -24,7 +24,7 @@ signal address or room code.
 
 - One sender and one receiver per room.
 - Room lifetime: 10 minutes.
-- One current course per session.
+- One CoursePackage per session.
 - Maximum encoded course size: 5 MiB.
 - No TURN relay and no cloud progress synchronization.
 - The iPhone offline mode intentionally omits remote login, ranking, sharing, daily
@@ -32,3 +32,7 @@ signal address or room code.
 
 If the iPhone cannot reach `workers.dev`, the receiver reports a network/VPN error
 within 15 seconds and the sender can create a new room.
+
+The QR code carries only the receiver URL, Signal Worker URL, and room token. The
+course package itself is validated as `earthworm-course-pack` and sent through the
+ordered, reliable WebRTC DataChannel before it is written to IndexedDB.

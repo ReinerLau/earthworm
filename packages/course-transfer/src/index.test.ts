@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 
+import { createCoursePackage } from "@earthworm/course-package";
 import {
   assembleChunks,
   COURSE_TRANSFER_CHUNK_SIZE,
   COURSE_TRANSFER_MAX_BYTES,
   courseTransferEnvelopeSchema,
   createCourseEnvelope,
+  createCoursePackageEnvelope,
   decodeChunk,
   encodeChunk,
 } from "./index";
@@ -39,6 +41,25 @@ describe("course transfer protocol", () => {
         contentHash: "a".repeat(64),
       }).contentHash,
     ).toBe("a".repeat(64));
+  });
+
+  it("wraps a complete course package for transport", () => {
+    const coursePackage = createCoursePackage({
+      id: "pack-1",
+      title: "Demo pack",
+      description: "",
+      courses: [
+        {
+          id: "course-1",
+          title: "Demo",
+          order: 0,
+          statements: [
+            { id: "statement-1", order: 0, chinese: "你好", english: "Hello", soundmark: "" },
+          ],
+        },
+      ],
+    });
+    expect(createCoursePackageEnvelope(coursePackage).package).toEqual(coursePackage);
   });
 
   it("rejects missing and oversized chunks", () => {

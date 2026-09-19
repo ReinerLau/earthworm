@@ -9,7 +9,7 @@ describe("createOfflineReceiverUrl", () => {
       roomToken: "a".repeat(32),
     });
 
-    expect(url.startsWith(`${DEFAULT_OFFLINE_PWA_URL}/#/offline/receive`)).toBe(true);
+    expect(url.startsWith(`${DEFAULT_OFFLINE_PWA_URL}/#/receive`)).toBe(true);
     expect(url).not.toContain("localhost");
     expect(url).toContain("signal=https%3A%2F%2Fsignal.example.workers.dev");
   });
@@ -21,6 +21,6 @@ describe("createOfflineReceiverUrl", () => {
       roomToken: "b".repeat(32),
     });
 
-    expect(url.startsWith("https://pages.example.test/earthworm/#/offline/receive")).toBe(true);
+    expect(url.startsWith("https://pages.example.test/earthworm/#/receive")).toBe(true);
   });
 });

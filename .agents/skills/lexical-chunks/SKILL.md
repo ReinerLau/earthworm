@@ -60,16 +60,22 @@ description: 将英文教材按确定性实义核心和渐进组合规则生成�
 
    渲染器重新验证分析文件的确定性组合结果，再校验提示 schema、句子数、单元数、字段类型和空值。输出已存在时自动使用递增文件名。
 
-   当用户明确要求上传到 Earthworm 时，改用结构化输出：
+   当用户明确要求导入 Earthworm 时，改用课程包输出：
 
    ```bash
    uv run <skill目录>/scripts/split_lexical_chunks.py \
      --render-analysis <实际分析文件> \
-     --format earthworm-json \
+     --format earthworm-course-pack \
+     --pack-id <稳定课程包 ID> \
+     --pack-title <课程包标题> \
+     --course-id <稳定课程 ID> \
+     --course-title <课程标题> \
      --output outputs/lexical-chunks/text.earthworm.json
    ```
 
-   Earthworm JSON 按原句顺序包含所有学习单元，并在每句末尾追加完整原句；所有英文答案均去除分隔标点，`soundmark` 固定为空字符串。该文件交给仓库的 `pnpm course:import` 管理员命令，不解析 Markdown 报告。
+   课程包按原句顺序包含所有渐进学习单元，并在每句末尾追加完整原句；所有英文答案均去除分隔标点，`soundmark` 固定为空字符串。课程包必须有稳定的包、课程和题目 ID，这样重新生成课程内容时才能保留未变化课程的学习进度。该文件直接在 Earthworm 网页端导入 IndexedDB，不再调用 `pnpm course:import`。
+
+   如果用户没有提供 ID，脚本会根据英文原文生成确定性的默认 ID；用户后续重新生成同一课程时应继续使用相同的 `--pack-id` 和 `--course-id`。
 
 4. 确认最终文件存在，对话只返回该文件的可点击链接。Earthworm 上传请求还需按仓库导入命令先 dry-run，得到确认后再使用 `--apply`。
 

@@ -1,45 +1,26 @@
 import { defineStore } from "pinia";
 import { ref } from "vue";
 
-import type { CoursePackResponse, CoursePacksResponse } from "~/api/coursePack";
-import { fetchCourseHistory } from "~/api/courseHistory";
-import { fetchCoursePack, fetchCoursePacks } from "~/api/coursePack";
+import type { LocalCoursePack } from "~/services/courseRepository";
+import { getCoursePack, listCoursePacks } from "~/services/courseRepository";
 
-export interface CoursePack {
-  id: string;
-  order: number;
-  title: string;
-  description: string;
-  isFree: boolean;
-}
+export type CoursePack = LocalCoursePack;
+export type Course = LocalCoursePack["courses"][number];
 
 export const useCoursePackStore = defineStore("course-pack", () => {
-  const coursePacks = ref<CoursePacksResponse>([]);
-  const currentCoursePack = ref<CoursePackResponse>();
+  const coursePacks = ref<LocalCoursePack[]>([]);
+  const currentCoursePack = ref<LocalCoursePack>();
 
   async function setupCoursePacks() {
-    const res = await fetchCoursePacks();
-    coursePacks.value = res;
+    coursePacks.value = await listCoursePacks();
   }
 
   async function setupCoursePack(coursePackId: string) {
-    const res = await fetchCoursePack(coursePackId);
-    currentCoursePack.value = res;
+    currentCoursePack.value = await getCoursePack(coursePackId);
   }
 
   async function updateCoursesCompleteCount(coursePackId: string) {
-    const courseHistory = await fetchCourseHistory(coursePackId);
-
-    const find = (courseId: string) =>
-      courseHistory.find((history) => history.courseId === courseId);
-
-    currentCoursePack.value?.courses.forEach((course) => {
-      const matchCourseHistory = find(course.id);
-
-      if (matchCourseHistory) {
-        course.completionCount = matchCourseHistory.completionCount;
-      }
-    });
+    await setupCoursePack(coursePackId);
   }
 
   return {

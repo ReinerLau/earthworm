@@ -58,6 +58,7 @@ import { computed, onUnmounted, ref } from "vue";
 
 import type { TransferSession, TransferStatus } from "@earthworm/course-transfer";
 import { createRoomToken, createTransferSession } from "@earthworm/course-transfer";
+import { getCoursePack } from "~/services/courseRepository";
 import { useCourseStore } from "~/store/course";
 import { createOfflineReceiverUrl } from "~/utils/offlineReceiverUrl";
 
@@ -135,7 +136,10 @@ async function openTransfer(): Promise<void> {
       onStatus: updateStatus,
     });
     await session.connect();
-    if (courseStore.currentCourse) await session.sendCourse(courseStore.currentCourse);
+    if (!courseStore.currentCourse) throw new Error("当前没有可发送的课程");
+    const coursePack = await getCoursePack(courseStore.currentCourse.coursePackId);
+    if (!coursePack) throw new Error("本机没有找到当前课程包");
+    await session.sendCoursePackage(coursePack);
   } catch (error) {
     session?.close();
     session = undefined;

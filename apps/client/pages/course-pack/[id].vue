@@ -4,7 +4,7 @@
       <Loading></Loading>
     </template>
 
-    <template v-else>
+    <template v-else-if="coursePackStore.currentCoursePack">
       <h2 class="mb-4 border-b py-4 text-center text-3xl dark:border-gray-600">
         {{ coursePackStore.currentCoursePack?.title }}
       </h2>
@@ -32,11 +32,14 @@
 
 <script setup lang="ts">
 import { navigateTo } from "#app";
+import { definePageMeta } from "#imports";
 import { ref } from "vue";
 import { useRoute } from "vue-router";
 
 import { useActiveCourseMap } from "~/composables/courses/activeCourse";
 import { useCoursePackStore } from "~/store/coursePack";
+
+definePageMeta({ layout: "offline" });
 
 const isLoading = ref(false);
 const route = useRoute();
@@ -49,9 +52,10 @@ setup();
 async function setup() {
   // 只在初始化的时候拉取一次数据
   // 后续只更新课程的完成次数数据
-  if (!coursePackStore.currentCoursePack) {
-    isLoading.value = true;
+  isLoading.value = true;
+  try {
     await coursePackStore.setupCoursePack(coursePackId);
+  } finally {
     isLoading.value = false;
   }
 }

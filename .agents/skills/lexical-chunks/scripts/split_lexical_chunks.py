@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -36,6 +37,7 @@ DEFAULT_RULES = Path(__file__).resolve().parents[1] / "rules" / "progression-rul
 ANALYSIS_SCHEMA_VERSION = 7
 ANNOTATION_SCHEMA_VERSION = 7
 EARTHWORM_SCHEMA_VERSION = 1
+EARTHWORM_COURSE_PACK_VERSION = 1
 RULE_SCHEMA_VERSION = 5
 SENTENCE_PATTERN = re.compile(
     r".*?[.!?]+(?:[\"'’”’\)\]]+)?(?=\s|$)|.+$",
@@ -141,13 +143,17 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--format",
-        choices=("markdown", "earthworm-json"),
+        choices=("markdown", "earthworm-json", "earthworm-course-pack"),
         default="markdown",
         help="render format for --render-analysis (default: markdown)",
     )
+    parser.add_argument("--pack-id", help="stable course package id")
+    parser.add_argument("--pack-title", default="Earthworm Course Pack")
+    parser.add_argument("--course-id", help="stable course id")
+    parser.add_argument("--course-title", default="Course 1")
     args = parser.parse_args()
     if args.format != "markdown" and args.render_analysis is None:
-        parser.error("--format earthworm-json requires --render-analysis")
+        parser.error(f"--format {args.format} requires --render-analysis")
     return args
 
 
@@ -1378,6 +1384,80 @@ def render_earthworm_json(
     ) + "\n"
 
 
+def render_earthworm_course_pack(
+    analysis: Mapping[str, Any],
+    annotations: Mapping[str, Any],
+    pack_id: str | None = None,
+    pack_title: str = "Earthworm Course Pack",
+    course_id: str | None = None,
+    course_title: str = "Course 1",
+) -> str:
+    english_source = "\n".join(
+        normalize_practice_text(sentence["sentence"])
+        for sentence in analysis["sentences"]
+    )
+    source_digest = hashlib.sha256(english_source.encode("utf-8")).hexdigest()[:16]
+    stable_pack_id = pack_id or f"pack-{source_digest}"
+    stable_course_id = course_id or f"course-{source_digest}"
+    statements: list[dict[str, str | int]] = []
+
+    for analyzed_sentence, annotated_sentence in zip(
+        analysis["sentences"], annotations["sentences"], strict=True
+    ):
+        units = [
+            (unit["text"], prompt)
+            for unit, prompt in zip(
+                analyzed_sentence["learning_units"],
+                annotated_sentence["unit_prompts"],
+                strict=True,
+            )
+        ]
+        units.append(
+            (
+                analyzed_sentence["sentence"],
+                annotated_sentence["sentence_translation"],
+            )
+        )
+        for text, prompt in units:
+            english = normalize_practice_text(text)
+            statement_index = len(statements) + 1
+            statement_id = hashlib.sha256(
+                f"{stable_course_id}:{statement_index}:{english}".encode("utf-8")
+            ).hexdigest()[:16]
+            statements.append(
+                {
+                    "id": f"statement-{statement_id}",
+                    "order": statement_index,
+                    "chinese": prompt,
+                    "english": english,
+                    "soundmark": "",
+                }
+            )
+
+    return (
+        json.dumps(
+            {
+                "format": "earthworm-course-pack",
+                "version": EARTHWORM_COURSE_PACK_VERSION,
+                "id": stable_pack_id,
+                "title": pack_title,
+                "description": "",
+                "courses": [
+                    {
+                        "id": stable_course_id,
+                        "title": course_title,
+                        "order": 1,
+                        "statements": statements,
+                    }
+                ],
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n"
+    )
+
+
 def write_output(requested: Path, content: str) -> Path:
     output = choose_output_path(requested.expanduser()).resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -1394,6 +1474,15 @@ def main() -> int:
             annotations = parse_annotations(sys.stdin.read(), analysis)
             if args.format == "earthworm-json":
                 report = render_earthworm_json(analysis, annotations)
+            elif args.format == "earthworm-course-pack":
+                report = render_earthworm_course_pack(
+                    analysis,
+                    annotations,
+                    pack_id=args.pack_id,
+                    pack_title=args.pack_title,
+                    course_id=args.course_id,
+                    course_title=args.course_title,
+                )
             else:
                 report = render_contextual_report(analysis, annotations)
         except ConfigurationError as error:

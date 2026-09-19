@@ -1,5 +1,8 @@
 import { z } from "zod";
 
+import type { CoursePackage } from "@earthworm/course-package";
+import { coursePackageSchema } from "@earthworm/course-package";
+
 export const COURSE_TRANSFER_VERSION = 1 as const;
 export const COURSE_TRANSFER_CHUNK_SIZE = 16 * 1024;
 export const COURSE_TRANSFER_MAX_BYTES = 5 * 1024 * 1024;
@@ -30,9 +33,20 @@ export const courseTransferEnvelopeSchema = z.object({
   }),
 });
 
+export const coursePackageTransferEnvelopeSchema = z.object({
+  protocolVersion: z.literal(COURSE_TRANSFER_VERSION),
+  kind: z.literal("course-package"),
+  contentHash: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .optional(),
+  package: coursePackageSchema,
+});
+
 export type CourseTransferEnvelopeV1 = z.infer<typeof courseTransferEnvelopeSchema>;
 export type CourseTransferCourse = CourseTransferEnvelopeV1["course"];
 export type CourseTransferStatement = CourseTransferCourse["statements"][number];
+export type CoursePackageTransferEnvelopeV1 = z.infer<typeof coursePackageTransferEnvelopeSchema>;
 
 export type TransferRole = "sender" | "receiver";
 export type TransferStatus =
@@ -65,6 +79,11 @@ export interface ReceivedCourse {
   receipt: Omit<VerifiedReceipt, "id" | "name" | "durationMs">;
 }
 
+export interface ReceivedCoursePackage {
+  envelope: CoursePackageTransferEnvelopeV1;
+  receipt: Omit<VerifiedReceipt, "id" | "name" | "durationMs">;
+}
+
 export interface TransferSessionOptions {
   role: TransferRole;
   signalUrl: string;
@@ -75,11 +94,13 @@ export interface TransferSessionOptions {
   transferTimeoutMs?: number;
   onStatus?: (event: TransferStatusEvent) => void;
   onCourseReceived?: (course: ReceivedCourse) => void | Promise<void>;
+  onCoursePackageReceived?: (coursePackage: ReceivedCoursePackage) => void | Promise<void>;
 }
 
 export interface TransferSession {
   connect(): Promise<void>;
   sendCourse(course: CourseTransferCourse): Promise<VerifiedReceipt>;
+  sendCoursePackage(coursePackage: CoursePackage): Promise<VerifiedReceipt>;
   close(): void;
 }
 
@@ -105,6 +126,16 @@ export function createCourseEnvelope(course: CourseTransferCourse): CourseTransf
         soundmark: statement.soundmark,
       })),
     },
+  });
+}
+
+export function createCoursePackageEnvelope(
+  coursePackage: CoursePackage,
+): CoursePackageTransferEnvelopeV1 {
+  return coursePackageTransferEnvelopeSchema.parse({
+    protocolVersion: COURSE_TRANSFER_VERSION,
+    kind: "course-package",
+    package: coursePackage,
   });
 }
 
@@ -320,16 +351,15 @@ export function createTransferSession(options: TransferSessionOptions): Transfer
     const bytes = assembleChunks(incoming.chunks, incoming.totalChunks, incoming.size);
     const digest = await sha256(bytes);
     if (digest !== incoming.sha256) throw new Error("课程 SHA-256 校验失败");
-    const envelope = courseTransferEnvelopeSchema.parse(
-      JSON.parse(new TextDecoder().decode(bytes)),
-    );
-    await options.onCourseReceived?.({
-      envelope,
-      receipt: {
-        bytes: incoming.size,
-        sha256: digest,
-      },
-    });
+    const payload = JSON.parse(new TextDecoder().decode(bytes)) as { kind?: unknown };
+    const receipt = { bytes: incoming.size, sha256: digest };
+    if (payload.kind === "course-package") {
+      const envelope = coursePackageTransferEnvelopeSchema.parse(payload);
+      await options.onCoursePackageReceived?.({ envelope, receipt });
+    } else {
+      const envelope = courseTransferEnvelopeSchema.parse(payload);
+      await options.onCourseReceived?.({ envelope, receipt });
+    }
     const durationMs = Math.round(performance.now() - incoming.startedAt);
     channel?.send(
       JSON.stringify({
@@ -341,7 +371,7 @@ export function createTransferSession(options: TransferSessionOptions): Transfer
         durationMs,
       }),
     );
-    status({ status: "completed", message: "课程已保存" });
+    status({ status: "completed", message: "课程包已保存" });
     incoming = undefined;
   }
 
@@ -420,14 +450,17 @@ export function createTransferSession(options: TransferSessionOptions): Transfer
     await waitFor(channelPromise, peerTimeoutMs, "WebRTC 连接超时，请重试");
   }
 
-  async function sendCourse(course: CourseTransferCourse): Promise<VerifiedReceipt> {
+  async function sendEnvelope(
+    envelope: CourseTransferEnvelopeV1 | CoursePackageTransferEnvelopeV1,
+    name: string,
+  ): Promise<VerifiedReceipt> {
     if (options.role !== "sender") throw new Error("只有发送端可以发送课程");
     const activeChannel = await waitFor(channelPromise, peerTimeoutMs, "数据通道未打开");
-    const baseEnvelope = createCourseEnvelope(course);
-    const contentHash = await sha256(new TextEncoder().encode(JSON.stringify(baseEnvelope.course)));
-    const envelope: CourseTransferEnvelopeV1 = { ...baseEnvelope, contentHash };
-    const bytes = new TextEncoder().encode(JSON.stringify(envelope));
-    if (bytes.byteLength > COURSE_TRANSFER_MAX_BYTES) throw new Error("课程超过 5 MiB 限制");
+    const content = "course" in envelope ? envelope.course : envelope.package;
+    const contentHash = await sha256(new TextEncoder().encode(JSON.stringify(content)));
+    const encodedEnvelope = { ...envelope, contentHash };
+    const bytes = new TextEncoder().encode(JSON.stringify(encodedEnvelope));
+    if (bytes.byteLength > COURSE_TRANSFER_MAX_BYTES) throw new Error("课程包超过 5 MiB 限制");
     const digest = await sha256(bytes);
     const id = crypto.randomUUID();
     const totalChunks = Math.ceil(bytes.byteLength / COURSE_TRANSFER_CHUNK_SIZE);
@@ -441,7 +474,7 @@ export function createTransferSession(options: TransferSessionOptions): Transfer
         kind: "metadata",
         protocolVersion: COURSE_TRANSFER_VERSION,
         id,
-        name: `${course.title}.json`,
+        name,
         size: bytes.byteLength,
         sha256: digest,
         chunkSize: COURSE_TRANSFER_CHUNK_SIZE,
@@ -488,6 +521,17 @@ export function createTransferSession(options: TransferSessionOptions): Transfer
     );
   }
 
+  async function sendCourse(course: CourseTransferCourse): Promise<VerifiedReceipt> {
+    return sendEnvelope(createCourseEnvelope(course), `${course.title}.json`);
+  }
+
+  async function sendCoursePackage(coursePackage: CoursePackage): Promise<VerifiedReceipt> {
+    return sendEnvelope(
+      createCoursePackageEnvelope(coursePackage),
+      `${coursePackage.title}.earthworm.json`,
+    );
+  }
+
   function close(): void {
     if (closed) return;
     closed = true;
@@ -497,5 +541,5 @@ export function createTransferSession(options: TransferSessionOptions): Transfer
     status({ status: "closed" });
   }
 
-  return { connect, sendCourse, close };
+  return { connect, sendCourse, sendCoursePackage, close };
 }

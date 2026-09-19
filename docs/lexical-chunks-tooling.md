@@ -56,6 +56,7 @@ CLI 有三个模式：
 - `--analysis-output <路径>`：从标准输入读取英文，输出 schema 7 分析 JSON。
 - `--render-analysis <路径> --format markdown --output <路径>`：读取严格对齐的中文提示 JSON，生成 Markdown；`--format` 省略时行为相同。
 - `--render-analysis <路径> --format earthworm-json --output <路径>`：读取相同提示 JSON，生成可由管理员导入命令消费的结构化题目。
+- `--render-analysis <路径> --format earthworm-course-pack --output <路径>`：读取相同提示 JSON，生成可由 Earthworm 网页端导入 IndexedDB 的 CoursePackage V1。可用 `--pack-id`、`--pack-title`、`--course-id` 和 `--course-title` 指定稳定元数据。
 - 不传分析或渲染参数：生成兼容的英文单列表格，内容与确定性学习单元一致。
 
 默认路径为 `outputs/lexical-chunks/text.learning-units.md`。同名文件存在时生成 `text-2.learning-units.md` 等递增名称。任何校验失败都返回非零状态且不创建报告。
@@ -137,6 +138,38 @@ CLI 有三个模式：
 ```
 
 结构化输出使用独立 schema 1。渲染器按原句顺序写入每个渐进学习单元，并在每句最后写入整句中文提示和原句；全部英文答案均使用无分隔标点的练习文本，音标为空。管理员命令严格校验字段、非空提示和答案，再在单个数据库事务中创建课程包、课程和题目。
+
+### CoursePackage V1
+
+网页端导入格式为：
+
+```json
+{
+  "format": "earthworm-course-pack",
+  "version": 1,
+  "id": "stable-pack-id",
+  "title": "课程包标题",
+  "description": "",
+  "courses": [
+    {
+      "id": "stable-course-id",
+      "title": "第一课",
+      "order": 1,
+      "statements": [
+        {
+          "id": "stable-statement-id",
+          "order": 1,
+          "chinese": "鸟鸣",
+          "english": "Birdsong",
+          "soundmark": ""
+        }
+      ]
+    }
+  ]
+}
+```
+
+课程包由 `@earthworm/course-package` 校验和计算 hash。浏览器文件导入和 WebRTC 接收使用同一个 parser；进入 IndexedDB 前不会接受未经校验的数据。
 
 分析 JSON 仍完整保留原文、标点和字符范围。Markdown、兼容单列表格与 Earthworm JSON 在最终输出时统一提取 tokenizer 已识别的英文和数字 token，并以单个空格连接。这样会移除句号、逗号、问号、感叹号、引号、括号等分隔标点，同时保留 `don't`、`well-being`、`1,500` 和 `3.14` 等 token 内部符号。
 

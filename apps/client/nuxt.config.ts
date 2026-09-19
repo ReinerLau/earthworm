@@ -43,7 +43,7 @@ export default defineNuxtConfig({
     "@nuxt/test-utils/module",
     "@vite-pwa/nuxt",
   ],
-  plugins: ["~/plugins/logto.ts"],
+  plugins: ["~/plugins/offline-hash.client.ts"],
   runtimeConfig: {
     public: {
       endpoint: process.env.LOGTO_ENDPOINT || "",
@@ -59,10 +59,10 @@ export default defineNuxtConfig({
   pwa: {
     registerType: "autoUpdate",
     manifest: {
-      name: "Earthworm 离线课程",
+      name: "Earthworm 本地课程",
       short_name: "Earthworm",
       description: "在 iPhone 上离线练习 Earthworm 课程",
-      start_url: `${appBaseURL}#/offline/`,
+      start_url: `${appBaseURL}#/course-pack`,
       scope: appBaseURL,
       display: "standalone",
       background_color: "#ffffff",

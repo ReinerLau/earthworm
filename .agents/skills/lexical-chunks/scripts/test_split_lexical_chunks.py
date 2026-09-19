@@ -36,6 +36,7 @@ from split_lexical_chunks import (
     normalize_practice_text,
     parse_annotations,
     render_contextual_report,
+    render_earthworm_course_pack,
     render_earthworm_json,
     render_report,
     select_longest_spans,
@@ -1087,6 +1088,26 @@ class SplitLexicalChunksTests(TestCase):
                 ],
             },
         )
+
+    def test_renders_course_package_with_stable_ids(self):
+        payload = json.loads(
+            render_earthworm_course_pack(
+                self.sample_analysis(),
+                self.sample_annotations(),
+                pack_id="pack-1",
+                pack_title="示例包",
+                course_id="course-1",
+                course_title="第一课",
+            )
+        )
+
+        self.assertEqual(payload["format"], "earthworm-course-pack")
+        self.assertEqual(payload["version"], 1)
+        self.assertEqual(payload["id"], "pack-1")
+        self.assertEqual(payload["courses"][0]["id"], "course-1")
+        self.assertTrue(payload["courses"][0]["statements"][0]["id"].startswith("statement-"))
+        self.assertEqual(payload["courses"][0]["statements"][0]["order"], 1)
+        self.assertEqual(len(payload["courses"][0]["statements"]), 3)
 
     def test_renders_245_items_and_appends_each_complete_sentence(self):
         analysis = {

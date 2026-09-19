@@ -72,7 +72,7 @@
             class="btn"
             @click="goToNextCourse"
           >
-            {{ haveNextCourse || !isAuthenticated() ? "开始下一课" : "返回课程列表" }}
+            返回课程列表
             <kbd class="kbd"> ↵ </kbd>
           </button>
         </div>
@@ -87,34 +87,24 @@
 
 <script setup lang="ts">
 import { navigateTo } from "#app";
-import { computed, ref, watch } from "vue";
+import { watch } from "vue";
 
-import { useActiveCourseMap } from "~/composables/courses/activeCourse";
 import { courseTimer } from "~/composables/courses/courseTimer";
-import { useLearnRecord } from "~/composables/learnRecord";
-import { useAuthRequire } from "~/composables/main/authRequire";
 import { useConfetti } from "~/composables/main/confetti/useConfetti";
-import { readOneSentencePerDayAloud } from "~/composables/main/englishSound";
 import { useGameMode } from "~/composables/main/game";
 import { useShareModal } from "~/composables/main/shareImage/share";
-import { useDailySentence, useSummary } from "~/composables/main/summary";
-import { isAuthenticated } from "~/services/auth";
+import { useSummary } from "~/composables/main/summary";
 import { useCourseStore } from "~/store/course";
-import { useCoursePackStore } from "~/store/coursePack";
 import { permitSaveStatement, preventSaveStatement } from "~/store/statement";
 import { formatSecondsToTime } from "~/utils/date";
 import { cancelShortcut, registerShortcut } from "~/utils/keyboardShortcuts";
 
 const courseStore = useCourseStore();
-const coursePackStore = useCoursePackStore();
-const { goToNextCourse, completeCourse, haveNextCourse } = useCourse();
+const { goToNextCourse, completeCourse } = useCourse();
 const { handleDoAgain } = useDoAgain();
 const { showModal, hideSummary } = useSummary();
-const { zhSentence, enSentence } = useDailySentence(courseStore.isOffline);
 const { confettiCanvasRef, playConfetti } = useConfetti();
 const { showShareModal } = useShareModal();
-const { updateActiveCourseMap } = useActiveCourseMap();
-const { updateLearnRecord } = useLearnRecord();
 
 watch(showModal, (val) => {
   if (val) {
@@ -126,8 +116,6 @@ watch(showModal, (val) => {
     registerShortcut("enter", goToNextCourse);
     // 显示结算面板代表当前课程已经完成
     completeCourse();
-    // 朗读每日一句
-    if (!courseStore.isOffline) soundSentence();
     // 延迟一小会放彩蛋
     setTimeout(async () => {
       playConfetti();
@@ -156,62 +144,21 @@ function useDoAgain() {
   };
 }
 
-// 朗读每日一句
-function soundSentence() {
-  readOneSentencePerDayAloud(enSentence.value);
-}
-
 function useCourse() {
-  let nextCourseId = ref("");
-
-  const haveNextCourse = computed(() => {
-    return nextCourseId.value;
-  });
-
   async function goToNextCourse() {
-    const { showAuthRequireModal } = useAuthRequire();
-
-    // 无论后续如何处理，都需要先隐藏 Summary 页面
     hideSummary();
-    if (courseStore.isOffline) {
-      navigateTo("/offline/");
-      return;
-    }
-    if (!isAuthenticated()) {
-      // 去注册
-      showAuthRequireModal();
-      return;
-    }
-
-    if (nextCourseId.value) {
-      navigateTo(`/game/${courseStore.currentCourse?.coursePackId}/${nextCourseId.value}`);
-    } else {
-      navigateTo(`/course-pack/${courseStore.currentCourse?.coursePackId}`);
-    }
+    navigateTo(`/course-pack/${courseStore.currentCourse?.coursePackId}`);
   }
 
   async function completeCourse() {
-    if ((courseStore.isOffline || isAuthenticated()) && courseStore.currentCourse) {
-      const { coursePackId } = courseStore.currentCourse;
-      const { nextCourse } = await courseStore.completeCourse();
-      if (!courseStore.isOffline) {
-        coursePackStore.updateCoursesCompleteCount(coursePackId);
-        updateLearnRecord();
-      }
-
-      if (nextCourse) {
-        nextCourseId.value = nextCourse.id;
-        updateActiveCourseMap(coursePackId, nextCourseId.value);
-      } else {
-        updateActiveCourseMap(coursePackId, "");
-      }
+    if (courseStore.currentCourse) {
+      await courseStore.completeCourse();
     }
   }
 
   return {
     completeCourse,
     goToNextCourse,
-    haveNextCourse,
   };
 }
 

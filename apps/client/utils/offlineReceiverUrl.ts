@@ -9,6 +9,6 @@ export interface OfflineReceiverUrlOptions {
 export function createOfflineReceiverUrl(options: OfflineReceiverUrlOptions): string {
   const pwaUrl = (options.pwaUrl || DEFAULT_OFFLINE_PWA_URL).replace(/\/$/, "");
   const url = new URL(`${pwaUrl}/`);
-  url.hash = `/offline/receive?signal=${encodeURIComponent(options.signalUrl)}&room=${encodeURIComponent(options.roomToken)}`;
+  url.hash = `/receive?signal=${encodeURIComponent(options.signalUrl)}&room=${encodeURIComponent(options.roomToken)}`;
   return url.toString();
 }

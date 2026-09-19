@@ -5,7 +5,7 @@
   >
     <figure>
       <NuxtImg
-        :src="coursePack.cover"
+        :src="coursePack.cover || '/logo.png'"
         :placeholder="[288, 180]"
         width="288"
         height="180"
@@ -22,22 +22,15 @@
 <script setup lang="ts">
 import { navigateTo } from "#imports";
 
-import type { CoursePacksResponse } from "~/api/coursePack";
+import type { LocalCoursePack } from "~/services/courseRepository";
 
-type CoursePack = CoursePacksResponse[number];
 interface Props {
-  coursePack: CoursePack;
+  coursePack: LocalCoursePack;
 }
 
 defineProps<Props>();
 
-function handleGoToCoursePack(coursePack: CoursePack) {
-  if (coursePack.isFree) {
-    navigateTo(`/course-pack/${coursePack.id}`);
-  } else {
-    // 看看是不是会员 不是的话 直接弹出消息告知 需要是会员
-    // TODO 还没有检测是不是会员的功能函数
-    console.log("需要是会员");
-  }
+function handleGoToCoursePack(coursePack: LocalCoursePack) {
+  navigateTo(`/course-pack/${coursePack.id}`);
 }
 </script>

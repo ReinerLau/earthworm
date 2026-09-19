@@ -4,8 +4,6 @@ import { debounce } from "lodash-es";
 import { ref, watch } from "vue";
 
 import type { Course } from "./course";
-import { fetchUpdateCourseProgress } from "~/api/userCourseProgress";
-import { isAuthenticated } from "~/services/auth";
 
 const DEBOUNCE_TIME = 5000;
 const INTERVAL_TIME = 60 * 1000 * 5;
@@ -15,8 +13,7 @@ let isSaveStatement = true;
 const statementIndex = ref(0);
 
 interface StatementSetupOptions {
-  offline?: boolean;
-  saveOfflineProgress?: (statementIndex: number) => void | Promise<void>;
+  saveProgress?: (statementIndex: number) => void | Promise<void>;
 }
 
 let stopCurrentWatch: (() => void) | undefined;
@@ -40,7 +37,7 @@ export function useStatement() {
     watch(
       () => statementIndex.value,
       () => {
-        if (options.offline || isAuthenticated()) {
+        if (options.saveProgress) {
           debouncedSaveProgress();
         }
       },
@@ -73,15 +70,7 @@ export function useStatement() {
       if (!isSaveStatement) return;
 
       if (statementIndex.value !== lastSavedIndex) {
-        if (options.offline) {
-          void options.saveOfflineProgress?.(statementIndex.value);
-        } else if (isAuthenticated()) {
-          void fetchUpdateCourseProgress({
-            coursePackId: course.value!.coursePackId,
-            courseId: course.value!.id,
-            statementIndex: statementIndex.value,
-          });
-        }
+        void options.saveProgress?.(statementIndex.value);
         lastSavedIndex = statementIndex.value;
       }
     }

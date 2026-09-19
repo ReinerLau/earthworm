@@ -8,8 +8,6 @@
 
   <MainTips />
   <MainSummary />
-  <MainShare />
-  <MainAuthRequired />
   <MessageBox
     :content="messageContent"
     v-model:isShowModal="isMessageShow"

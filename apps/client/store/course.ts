@@ -2,9 +2,8 @@ import { defineStore } from "pinia";
 import { computed, ref, watchEffect } from "vue";
 
 import type { CoursePack } from "./coursePack";
-import { fetchCompleteCourse, fetchCourse } from "~/api/course";
 import { useActiveCourseMap } from "~/composables/courses/activeCourse";
-import { getOfflineCourse, saveOfflineProgress } from "~/services/offlineCourse";
+import { getCourse, saveCourseProgress } from "~/services/courseRepository";
 import { useStatement } from "./statement";
 
 export interface Statement {
@@ -81,43 +80,28 @@ export const useCourseStore = defineStore("course", () => {
 
   async function completeCourse() {
     const coursePackId = currentCourse.value?.coursePackId!;
-    if (isOffline.value && currentCourse.value) {
-      await saveOfflineProgress(
-        currentCourse.value.id,
-        Math.max(0, currentCourse.value.statements.length - 1),
-        true,
-      );
-      return { nextCourse: undefined };
-    }
-    const res = await fetchCompleteCourse(coursePackId, currentCourse.value?.id!);
-    return res;
+    if (!currentCourse.value) return { nextCourse: undefined };
+    await saveCourseProgress(
+      coursePackId,
+      currentCourse.value.id,
+      Math.max(0, currentCourse.value.statements.length - 1),
+      true,
+    );
+    return { nextCourse: undefined };
   }
 
   async function setup(coursePackId: string, courseId: string) {
-    isOffline.value = false;
-    let course = await fetchCourse(coursePackId, courseId);
+    const course = await getCourse(coursePackId, courseId);
+    if (!course) throw new Error("本机没有找到这门课程，请先导入课程包");
+    isOffline.value = true;
     currentCourse.value = course;
-    setupStatement(currentCourse);
+    setupStatement(currentCourse, {
+      saveProgress: (index) => saveCourseProgress(coursePackId, courseId, index),
+    });
   }
 
   async function setupOffline(coursePackId: string, courseId: string) {
-    const course = await getOfflineCourse(courseId);
-    if (!course || course.coursePackId !== coursePackId) {
-      throw new Error("本机没有找到这门课程，请先从电脑发送课程");
-    }
-    isOffline.value = true;
-    currentCourse.value = {
-      ...course,
-      statements: course.statements.map((statement, index) => ({
-        ...statement,
-        id: statement.id ?? `${course.id}-${index}`,
-      })),
-    };
-    setupStatement(currentCourse, {
-      offline: true,
-      saveOfflineProgress: (index) =>
-        saveOfflineProgress(course.id, index, index >= Math.max(0, course.statements.length - 1)),
-    });
+    return setup(coursePackId, courseId);
   }
 
   return {

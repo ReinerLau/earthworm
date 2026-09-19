@@ -26,17 +26,13 @@ const isLoading = ref(true);
 const route = useRoute();
 const coursesStore = useCourseStore();
 const { showQuestion } = useGameMode();
-const isOffline = route.query.offline === "1";
+const isOffline = true;
 
 showQuestion();
 
 onMounted(async () => {
   const { coursePackId, id } = route.params;
-  if (isOffline) {
-    await coursesStore.setupOffline(coursePackId as string, id as string);
-  } else {
-    await coursesStore.setup(coursePackId as string, id as string);
-  }
+  await coursesStore.setup(coursePackId as string, id as string);
 
   isLoading.value = false;
 });
