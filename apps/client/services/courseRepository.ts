@@ -32,6 +32,14 @@ export interface LocalCoursePack extends Omit<CoursePackage, "courses"> {
   courses: LocalCourse[];
 }
 
+export function toCoursePackage(localPack: LocalCoursePack): CoursePackage {
+  const { packageHash, importedAt, courses, ...packageValue } = localPack;
+  return parseCoursePackage({
+    ...packageValue,
+    courses: courses.map(({ coursePackId, statementIndex, completionCount, ...course }) => course),
+  });
+}
+
 interface CoursePackRecord {
   id: string;
   package: CoursePackage;

@@ -4,6 +4,7 @@ import {
   createCoursePackageFromCourse,
   mergeCourseProgress,
   normalizeImportedPackage,
+  toCoursePackage,
 } from "../courseRepository";
 
 const course = {
@@ -56,5 +57,25 @@ describe("course repository policies", () => {
     expect(packageValue.format).toBe("earthworm-course-pack");
     expect(packageValue.courses[0]?.statements[0]?.english).toBe("Hello");
     expect(packageValue.id).toMatch(/^pack-[a-f0-9]{16}$/);
+  });
+
+  it("removes local progress metadata before transfer", () => {
+    const packageValue = toCoursePackage({
+      ...createCoursePackageFromCourse(course),
+      packageHash: "a".repeat(64),
+      importedAt: "2026-01-01T00:00:00.000Z",
+      courses: [
+        {
+          ...createCoursePackageFromCourse(course).courses[0],
+          coursePackId: "pack-1",
+          statementIndex: 1,
+          completionCount: 2,
+        },
+      ],
+    });
+
+    expect(packageValue.courses[0]).not.toHaveProperty("coursePackId");
+    expect(packageValue.courses[0]).not.toHaveProperty("statementIndex");
+    expect(packageValue).not.toHaveProperty("packageHash");
   });
 });
