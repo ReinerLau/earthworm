@@ -5,6 +5,12 @@
         <Loading></Loading>
       </template>
       <template v-else>
+        <div class="mb-4 flex items-center">
+          <CommonBackLink
+            :to="`/course-pack/${route.params.coursePackId}`"
+            label="返回课程包"
+          />
+        </div>
         <MainTool />
         <MainGame />
       </template>

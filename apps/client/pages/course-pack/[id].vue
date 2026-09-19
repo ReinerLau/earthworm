@@ -5,6 +5,12 @@
     </template>
 
     <template v-else-if="coursePackStore.currentCoursePack">
+      <div class="mb-4 flex items-center">
+        <CommonBackLink
+          label="返回课程包列表"
+          to="/course-pack"
+        />
+      </div>
       <h2 class="mb-4 border-b py-4 text-center text-3xl dark:border-gray-600">
         {{ coursePackStore.currentCoursePack?.title }}
       </h2>

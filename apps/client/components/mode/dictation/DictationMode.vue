@@ -3,7 +3,10 @@
     <div v-if="!isStart">
       <p>准备好了吗？(按任意键开启游戏)</p>
     </div>
-    <div v-else>
+    <div
+      v-else
+      class="w-full min-w-0"
+    >
       <ModeDictationToolbar />
       <template v-if="isQuestion()">
         <ModeDictationQuestion />
