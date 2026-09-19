@@ -59,6 +59,7 @@ import { computed, onUnmounted, ref } from "vue";
 import type { TransferSession, TransferStatus } from "@earthworm/course-transfer";
 import { createRoomToken, createTransferSession } from "@earthworm/course-transfer";
 import { useCourseStore } from "~/store/course";
+import { createOfflineReceiverUrl } from "~/utils/offlineReceiverUrl";
 
 const courseStore = useCourseStore();
 const runtimeConfig = useRuntimeConfig();
@@ -79,12 +80,11 @@ const statusClass = computed(() => {
 
 function receiverUrl(token: string): string {
   const signalUrl = String(runtimeConfig.public.signalBaseUrl || "");
-  const pwaUrl = String(
-    runtimeConfig.public.pwaUrl || `${window.location.origin}${runtimeConfig.app.baseURL}`,
-  ).replace(/\/$/, "");
-  const url = new URL(`${pwaUrl}/`);
-  url.hash = `/offline/receive?signal=${encodeURIComponent(signalUrl)}&room=${token}`;
-  return url.toString();
+  return createOfflineReceiverUrl({
+    pwaUrl: String(runtimeConfig.public.pwaUrl || ""),
+    signalUrl,
+    roomToken: token,
+  });
 }
 
 function makeQr(url: string): string {
