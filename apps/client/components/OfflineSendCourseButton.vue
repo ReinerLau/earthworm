@@ -16,7 +16,7 @@
       <div class="modal-box max-w-md text-center">
         <h3 class="text-lg font-bold">发送到 iPhone</h3>
         <p class="mt-2 text-sm opacity-70">
-          用 iPhone 扫描一次二维码，连接成功后会自动发送当前课程。
+          用手机系统相机扫描一次二维码，浏览器打开后会自动接收当前课程。
         </p>
         <img
           v-if="qrDataUrl"
@@ -90,7 +90,7 @@ import type { TransferSession, TransferStatus } from "@earthworm/course-transfer
 import { createRoomToken, createTransferSession } from "@earthworm/course-transfer";
 import { getCoursePack, toCoursePackage } from "~/services/courseRepository";
 import { useCourseStore } from "~/store/course";
-import { createOfflineReceiverUrl } from "~/utils/offlineReceiverUrl";
+import { createTransferReceiverUrl } from "~/utils/transferReceiverUrl";
 
 const courseStore = useCourseStore();
 const runtimeConfig = useRuntimeConfig();
@@ -113,8 +113,12 @@ const statusClass = computed(() => {
 
 function receiverUrl(token: string): string {
   const signalUrl = String(runtimeConfig.public.signalBaseUrl || "");
-  return createOfflineReceiverUrl({
-    pwaUrl: String(runtimeConfig.public.pwaUrl || ""),
+  const appBaseUrl = new URL(
+    String(runtimeConfig.public.appBaseURL || "/"),
+    window.location.origin,
+  );
+  return createTransferReceiverUrl({
+    appUrl: new URL("receive", appBaseUrl).toString(),
     signalUrl,
     roomToken: token,
   });

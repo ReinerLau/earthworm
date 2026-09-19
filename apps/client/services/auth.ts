@@ -5,7 +5,6 @@ let logto: ReturnType<typeof useLogto> | undefined;
 let runtimeConfig: ReturnType<typeof useRuntimeConfig>;
 export async function setupAuth() {
   runtimeConfig = useRuntimeConfig();
-  if (runtimeConfig.public.offlineMode) return;
   logto = useLogto();
 }
 
