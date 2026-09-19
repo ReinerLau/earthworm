@@ -24,6 +24,36 @@
           :src="qrDataUrl"
           alt="发送到 iPhone 的二维码"
         />
+        <label
+          class="block text-left text-sm font-semibold"
+          for="offline-transfer-link"
+          >也可以复制同步链接到手机</label
+        >
+        <div class="join mt-2 w-full">
+          <input
+            id="offline-transfer-link"
+            class="input join-item input-bordered min-w-0 flex-1 text-xs"
+            :value="receiverLink"
+            type="url"
+            readonly
+            aria-label="课程同步链接"
+          />
+          <button
+            class="btn join-item"
+            type="button"
+            :disabled="!receiverLink"
+            @click="copyReceiverLink"
+          >
+            复制链接
+          </button>
+        </div>
+        <p
+          v-if="copyMessage"
+          class="mt-2 text-left text-sm opacity-70"
+          aria-live="polite"
+        >
+          {{ copyMessage }}
+        </p>
         <p class="break-all text-xs opacity-60">{{ roomToken }}</p>
         <p
           class="mt-4 text-sm"
@@ -71,6 +101,8 @@ const status = ref<TransferStatus>("idle");
 const statusMessage = ref("准备二维码");
 const roomToken = ref("");
 const qrDataUrl = ref("");
+const receiverLink = ref("");
+const copyMessage = ref("");
 let session: TransferSession | undefined;
 
 const statusClass = computed(() => {
@@ -122,13 +154,16 @@ async function openTransfer(): Promise<void> {
   status.value = "idle";
   statusMessage.value = "准备二维码";
   roomToken.value = createRoomToken();
+  receiverLink.value = "";
+  copyMessage.value = "";
   const signalUrl = String(runtimeConfig.public.signalBaseUrl || "");
   if (!signalUrl) {
     updateStatus({ status: "error", message: "未配置 Cloudflare 信令地址" });
     return;
   }
   try {
-    qrDataUrl.value = makeQr(receiverUrl(roomToken.value));
+    receiverLink.value = receiverUrl(roomToken.value);
+    qrDataUrl.value = makeQr(receiverLink.value);
     session = createTransferSession({
       role: "sender",
       signalUrl,
@@ -147,11 +182,24 @@ async function openTransfer(): Promise<void> {
   }
 }
 
+async function copyReceiverLink(): Promise<void> {
+  if (!receiverLink.value) return;
+
+  try {
+    await navigator.clipboard.writeText(receiverLink.value);
+    copyMessage.value = "已复制同步链接，请在手机端粘贴";
+  } catch {
+    copyMessage.value = "复制失败，请手动选择上方链接复制";
+  }
+}
+
 function closeTransfer(): void {
   session?.close();
   session = undefined;
   isBusy.value = false;
   showModal.value = false;
+  receiverLink.value = "";
+  copyMessage.value = "";
 }
 
 onUnmounted(closeTransfer);

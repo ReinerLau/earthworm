@@ -43,8 +43,30 @@
         type="button"
         @click="cancel"
       >
-        取消
+        返回课程包列表
       </button>
+
+      <div class="divider my-8">或粘贴同步链接</div>
+      <div class="join w-full">
+        <input
+          v-model.trim="transferLink"
+          class="input join-item input-bordered w-full"
+          type="url"
+          inputmode="url"
+          autocomplete="off"
+          placeholder="粘贴电脑端复制的链接"
+          aria-label="课程同步链接"
+          @keyup.enter="joinByLink"
+        />
+        <button
+          class="btn join-item"
+          type="button"
+          :disabled="!transferLink"
+          @click="joinByLink"
+        >
+          连接
+        </button>
+      </div>
     </div>
   </section>
 </template>
@@ -61,6 +83,7 @@ definePageMeta({ layout: "offline" });
 const video = ref<HTMLVideoElement>();
 const message = ref("正在启动相机…");
 const hasError = ref(false);
+const transferLink = ref("");
 const reader = new BrowserQRCodeReader();
 let controls: { stop: () => void } | undefined;
 let completed = false;
@@ -104,6 +127,25 @@ onMounted(async () => {
     message.value = error instanceof Error ? error.message : "无法打开相机";
   }
 });
+
+function joinByLink(): void {
+  const payload = parseTransferQr(transferLink.value, window.location.origin);
+  if (!payload) {
+    hasError.value = true;
+    message.value = "链接无效或已失效，请从电脑端重新复制同步链接";
+    return;
+  }
+
+  completed = true;
+  controls?.stop();
+  void navigateTo({
+    path: "/receive",
+    query: {
+      signal: payload.signalUrl,
+      room: payload.roomToken,
+    },
+  });
+}
 
 function cancel() {
   controls?.stop();
