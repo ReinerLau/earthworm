@@ -56,7 +56,9 @@ jobs:
         run: pnpm schema:build
 
       - name: Build course transfer package
-        run: pnpm course-transfer:build
+        run: |
+          pnpm course-package:build
+          pnpm course-transfer:build
 
       - name: Run tests
         run: pnpm test:ci

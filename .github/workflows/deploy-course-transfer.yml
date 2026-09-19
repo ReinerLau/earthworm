@@ -60,6 +60,7 @@ jobs:
           PWA_PUBLIC_URL: ${{ vars.PWA_PUBLIC_URL || 'https://reinerlau.github.io/earthworm' }}
         run: |
           test -n "$SIGNAL_BASE_URL"
+          pnpm course-package:build
           pnpm course-transfer:build
           pnpm -F client generate
 
