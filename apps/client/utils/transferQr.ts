@@ -10,11 +10,8 @@ export function parseTransferQr(raw: string, currentOrigin: string): TransferQrP
     const url = new URL(raw);
     if (url.origin !== currentOrigin) return undefined;
 
-    const params = url.hash.includes("?")
-      ? new URLSearchParams(url.hash.slice(url.hash.indexOf("?") + 1))
-      : url.searchParams;
-    const signalUrl = params.get("signal") || "";
-    const roomToken = params.get("room") || "";
+    const signalUrl = url.searchParams.get("signal") || "";
+    const roomToken = url.searchParams.get("room") || "";
 
     if (!ROOM_TOKEN_PATTERN.test(roomToken)) return undefined;
     const signal = new URL(signalUrl);

@@ -37,14 +37,7 @@ export default defineNuxtConfig({
     },
   },
   css: ["~/assets/css/globals.css"],
-  modules: [
-    "@nuxtjs/tailwindcss",
-    "@vueuse/nuxt",
-    "@nuxt/image",
-    "@nuxt/test-utils/module",
-    "@vite-pwa/nuxt",
-  ],
-  plugins: ["~/plugins/offline-hash.client.ts"],
+  modules: ["@nuxtjs/tailwindcss", "@vueuse/nuxt", "@nuxt/image", "@nuxt/test-utils/module"],
   runtimeConfig: {
     public: {
       endpoint: process.env.LOGTO_ENDPOINT || "",
@@ -53,29 +46,8 @@ export default defineNuxtConfig({
       signInRedirectURI: process.env.LOGTO_SIGN_IN_REDIRECT_URI || "",
       signOutRedirectURI: process.env.LOGTO_SIGN_OUT_REDIRECT_URI || "",
       signalBaseUrl: process.env.SIGNAL_BASE_URL || "",
-      pwaUrl: process.env.PWA_PUBLIC_URL || "",
-      offlineMode: process.env.OFFLINE_PWA === "true",
+      appBaseURL,
       buildVersion: process.env.APP_VERSION || process.env.GITHUB_SHA || "dev",
     },
-  },
-  pwa: {
-    registerType: "autoUpdate",
-    manifest: {
-      name: "Earthworm 本地课程",
-      short_name: "Earthworm",
-      description: "在 iPhone 上离线练习 Earthworm 课程",
-      start_url: `${appBaseURL}#/course-pack`,
-      scope: appBaseURL,
-      display: "standalone",
-      background_color: "#ffffff",
-      theme_color: "#d946ef",
-      icons: [{ src: `${appBaseURL}logo.png`, sizes: "192x192", type: "image/png" }],
-    },
-    workbox: {
-      globPatterns: ["**/*.{js,css,html,png,svg,mp3,ttf,woff2,ico,json}"],
-      maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
-      navigateFallback: appBaseURL,
-    },
-    devOptions: { enabled: false },
   },
 });
