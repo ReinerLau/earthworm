@@ -14,9 +14,22 @@ let lastSavedIndex = 0;
 let isSaveStatement = true;
 const statementIndex = ref(0);
 
+interface StatementSetupOptions {
+  offline?: boolean;
+  saveOfflineProgress?: (statementIndex: number) => void | Promise<void>;
+}
+
+let stopCurrentWatch: (() => void) | undefined;
+let currentInterval: ReturnType<typeof setInterval> | undefined;
+let cleanupCurrent: (() => void) | undefined;
+
 export function useStatement() {
-  function setupStatement(course: Ref<Course | undefined>) {
+  function setupStatement(course: Ref<Course | undefined>, options: StatementSetupOptions = {}) {
+    stopCurrentWatch?.();
+    cleanupCurrent?.();
+    if (currentInterval) clearInterval(currentInterval);
     statementIndex.value = course.value!.statementIndex || 0;
+    lastSavedIndex = statementIndex.value;
 
     const debouncedSaveProgress = debounce(() => {
       saveProgress();
@@ -27,26 +40,32 @@ export function useStatement() {
     watch(
       () => statementIndex.value,
       () => {
-        if (isAuthenticated()) {
+        if (options.offline || isAuthenticated()) {
           debouncedSaveProgress();
         }
       },
     );
 
+    stopCurrentWatch = () => debouncedSaveProgress.cancel();
+
     // 窗口关闭前保存
-    window.addEventListener("beforeunload", () => {
-      saveProgress();
-    });
+    const handleBeforeUnload = () => saveProgress();
+    window.addEventListener("beforeunload", handleBeforeUnload);
 
     // 页面失去焦点时保存
-    document.addEventListener("visibilitychange", () => {
+    const handleVisibilityChange = () => {
       if (document.visibilityState === "hidden") {
         saveProgress();
       }
-    });
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    cleanupCurrent = () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
 
     // 设置间隔性自动保存
-    setInterval(() => {
+    currentInterval = setInterval(() => {
       saveProgress();
     }, INTERVAL_TIME); // 每5分钟自动保存一次
 
@@ -54,11 +73,16 @@ export function useStatement() {
       if (!isSaveStatement) return;
 
       if (statementIndex.value !== lastSavedIndex) {
-        fetchUpdateCourseProgress({
-          coursePackId: course.value!.coursePackId,
-          courseId: course.value!.id,
-          statementIndex: statementIndex.value,
-        });
+        if (options.offline) {
+          void options.saveOfflineProgress?.(statementIndex.value);
+        } else if (isAuthenticated()) {
+          void fetchUpdateCourseProgress({
+            coursePackId: course.value!.coursePackId,
+            courseId: course.value!.id,
+            statementIndex: statementIndex.value,
+          });
+        }
+        lastSavedIndex = statementIndex.value;
       }
     }
   }

@@ -4,6 +4,7 @@ import { computed, ref, watchEffect } from "vue";
 import type { CoursePack } from "./coursePack";
 import { fetchCompleteCourse, fetchCourse } from "~/api/course";
 import { useActiveCourseMap } from "~/composables/courses/activeCourse";
+import { getOfflineCourse, saveOfflineProgress } from "~/services/offlineCourse";
 import { useStatement } from "./statement";
 
 export interface Statement {
@@ -32,6 +33,7 @@ export interface Course {
 export const useCourseStore = defineStore("course", () => {
   const currentCourse = ref<Course>();
   const currentStatement = ref<Statement>();
+  const isOffline = ref(false);
   const { statementIndex, setupStatement } = useStatement();
 
   const { updateActiveCourseMap } = useActiveCourseMap();
@@ -79,23 +81,54 @@ export const useCourseStore = defineStore("course", () => {
 
   async function completeCourse() {
     const coursePackId = currentCourse.value?.coursePackId!;
+    if (isOffline.value && currentCourse.value) {
+      await saveOfflineProgress(
+        currentCourse.value.id,
+        Math.max(0, currentCourse.value.statements.length - 1),
+        true,
+      );
+      return { nextCourse: undefined };
+    }
     const res = await fetchCompleteCourse(coursePackId, currentCourse.value?.id!);
     return res;
   }
 
   async function setup(coursePackId: string, courseId: string) {
+    isOffline.value = false;
     let course = await fetchCourse(coursePackId, courseId);
     currentCourse.value = course;
     setupStatement(currentCourse);
+  }
+
+  async function setupOffline(coursePackId: string, courseId: string) {
+    const course = await getOfflineCourse(courseId);
+    if (!course || course.coursePackId !== coursePackId) {
+      throw new Error("本机没有找到这门课程，请先从电脑发送课程");
+    }
+    isOffline.value = true;
+    currentCourse.value = {
+      ...course,
+      statements: course.statements.map((statement, index) => ({
+        ...statement,
+        id: statement.id ?? `${course.id}-${index}`,
+      })),
+    };
+    setupStatement(currentCourse, {
+      offline: true,
+      saveOfflineProgress: (index) =>
+        saveOfflineProgress(course.id, index, index >= Math.max(0, course.statements.length - 1)),
+    });
   }
 
   return {
     statementIndex,
     currentCourse,
     currentStatement,
+    isOffline,
     words,
     totalQuestionsCount,
     setup,
+    setupOffline,
     doAgain,
     isAllDone,
     checkCorrect,

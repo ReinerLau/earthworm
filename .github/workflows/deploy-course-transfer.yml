@@ -1,0 +1,72 @@
+name: Deploy course transfer PWA and signaling
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - apps/client/**
+      - apps/signal-worker/**
+      - packages/course-transfer/**
+      - package.json
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - .github/workflows/deploy-course-transfer.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: earthworm-course-transfer-pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.pages-deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.0.6
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Deploy Cloudflare signaling Worker
+        working-directory: apps/signal-worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: pnpm exec wrangler deploy --config wrangler.jsonc
+
+      - uses: actions/configure-pages@v5
+
+      - name: Build transfer PWA
+        env:
+          OFFLINE_PWA: "true"
+          NUXT_APP_BASE_URL: /earthworm/
+          NUXT_ROUTER_HASH_MODE: "true"
+          SIGNAL_BASE_URL: ${{ vars.SIGNAL_BASE_URL }}
+          PWA_PUBLIC_URL: ${{ vars.PWA_PUBLIC_URL || 'https://reinerlau.github.io/earthworm' }}
+        run: |
+          test -n "$SIGNAL_BASE_URL"
+          pnpm course-transfer:build
+          pnpm -F client generate
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/client/.output/public
+
+      - name: Deploy Pages
+        id: pages-deployment
+        uses: actions/deploy-pages@v4
