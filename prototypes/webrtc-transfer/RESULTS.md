@@ -1,10 +1,10 @@
 # Prototype results
 
-Test date: 2026-09-18
+Test dates: 2026-09-18 and 2026-09-19
 
-This is a technical spike, not a production benchmark. Both automated peers ran
-in separate desktop browser tabs. The iPhone Safari/Home Screen check remains a
-manual acceptance step.
+This is a technical spike, not a production benchmark. Initial automated peers
+ran in separate desktop browser tabs. A real iPhone running Chrome on the same
+Wi-Fi was then used for the device transfer check.
 
 ## Observed results
 
@@ -19,28 +19,33 @@ manual acceptance step.
 | GitHub Pages + QR auto-join     | Receiver role, signaling URL, and room were populated automatically; DataChannel opened |
 | GitHub Pages real course        | SHA-256 matched; receiver completed in 593 ms; sender acknowledgement took 772 ms       |
 | IndexedDB                       | Received payload survived page reload and was readable on the next load                 |
+| Real iPhone without VPN         | Failed: the temporary `workers.dev` signaling connection remained pending               |
+| Real iPhone with VPN            | Connected; ICE selected UDP `srflx` to `prflx`; no TURN                                 |
+| Real iPhone 73,216-byte course  | SHA-256 matched; sender acknowledgement took 1,445 ms                                   |
+| Real iPhone 1,048,735-byte JSON | SHA-256 matched; sender acknowledgement took 7,171 ms                                   |
 
 The selected ICE pair was UDP `srflx` in the desktop checks. No TURN server was
 configured or used. This proves the intended Cloudflare-signaling/WebRTC data path
 works in the tested environment, but it does not prove that every router or mobile
 browser can establish a direct path.
 
-## Remaining acceptance check
+## Remaining acceptance checks
 
-On a real iPhone connected to the same Wi-Fi:
+On the real iPhone:
 
-1. Open <https://reinerlau.github.io/earthworm/> on the desktop and create a room.
-2. Scan the displayed QR code with the iPhone camera. Confirm that the receiver
-   joins without typing a room code.
-3. Send both payloads and confirm SHA-256 success within 5 seconds for the real
-   course and 15 seconds for the 1 MB payload.
-4. Add the page to the Home Screen, force-close it, disable networking, reopen it,
+1. Add the page to the Home Screen, force-close it, disable networking, reopen it,
    and use **读取本机已保存数据**.
-5. Repeat connection and both transfers five times before treating the spike as a
-   full go decision.
+2. Repeat connection and both transfers five times if an alternative signaling
+   endpoint that works without VPN is selected.
 
-## Provisional verdict
+## Verdict
 
-Proceed to the iPhone check. The core architecture is viable on desktop with the
-live GitHub Pages and Cloudflare paths. Do not begin the production refactor until
-the real-device and five-run checks pass.
+The WebRTC course-transfer architecture is technically viable on a real iPhone:
+QR pairing, direct DataChannel transfer, integrity verification, and IndexedDB
+writes all worked within the target timings.
+
+The default Cloudflare `workers.dev` signaling choice is a **no-go for the stated
+zero-configuration product goal in the tested network**. The iPhone could not
+reach the signaling endpoint until a VPN was enabled. Do not begin the production
+refactor with this endpoint as a hard dependency. First test a signaling origin
+that is reachable without VPN, or return to a LAN-local discovery/signaling design.
