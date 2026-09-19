@@ -7,7 +7,6 @@
       v-else
       class="w-full min-w-0"
     >
-      <ModeDictationToolbar />
       <template v-if="isQuestion()">
         <ModeDictationQuestion />
         <MainAnswerTip v-show="isAnswerTip()" />
