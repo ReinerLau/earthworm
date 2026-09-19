@@ -7,6 +7,11 @@
         to="/import"
         >导入课程包</NuxtLink
       >
+      <NuxtLink
+        class="btn btn-secondary btn-sm"
+        to="/scan"
+        >扫描电脑</NuxtLink
+      >
     </div>
     <template v-if="isLoading">
       <Loading></Loading>
